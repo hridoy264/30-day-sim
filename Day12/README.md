@@ -1,153 +1,76 @@
-# Day 12 — Building Models in MJCF
+# Day 12 — MuJoCo Fluid Forces in Practice
 
-## 🎯 Today's Goal
-Build a real, controllable robot in MJCF from scratch: multiple bodies, proper joints, and **actuators** (motors). By the end you'll have a 2-link arm you can drive.
+**Phase 3 · Marine Dynamics + MuJoCo Fluid · ~3 hours**
 
----
-
-## Overview
-
-Yesterday you dropped a ball. Today you build a robot. MJCF's nested structure makes multi-body robots intuitive: bodies contain bodies, joints connect them, and actuators provide the motors. This is the same links-and-joints idea from Day 5, expressed in MuJoCo's clean style.
+## 🎯 Goal
+Make MuJoCo model water. Set medium **density** and **viscosity**, enable the **ellipsoid fluid model** on a geom, drop a body in "water," and tune the drag.
 
 ---
 
-## Nesting = Kinematic Tree
+## How MuJoCo Does Fluids
 
-In MJCF, you build a robot by **nesting** `<body>` tags. A child body is automatically attached to its parent — the nesting *is* the kinematic tree:
+MuJoCo can simulate a body moving through a fluid medium using two layers:
+
+### 1. The medium (global, in `<option>`)
+Set the surrounding fluid's properties:
 
 ```xml
-<body name="upper_arm">          <!-- attached to world -->
-  <joint name="shoulder" .../>
-  <geom .../>
-  <body name="forearm">          <!-- attached to upper_arm -->
-    <joint name="elbow" .../>
-    <geom .../>
-  </body>
-</body>
+<option gravity="0 0 -9.81" timestep="0.002"
+        density="1000"        <!-- water ≈ 1000 kg/m³ (air ≈ 1.2) -->
+        viscosity="0.001"/>   <!-- water's viscosity -->
 ```
 
-This visual nesting makes the robot's structure obvious at a glance — a real strength of MJCF.
+Density alone already gives you **buoyancy and basic drag** via MuJoCo's inertia-box model.
 
----
-
-## Joint Types in MJCF
-
-| MJCF joint | Motion | Like |
-|------------|--------|------|
-| `hinge` | rotation about an axis | revolute (elbow) |
-| `slide` | linear sliding | prismatic |
-| `ball` | 3-DOF rotation | spherical |
-| `free` | 6-DOF (whole-body) | floating base |
-
-A `hinge` is the workhorse — it's the elbow/shoulder of robot arms.
-
----
-
-## Actuators: The Motors
-
-Bodies and joints define *structure*; **actuators** make it *move*. They live in a separate `<actuator>` block and reference a joint by name:
+### 2. The ellipsoid fluid model (per-geom, more realistic)
+For richer, tunable drag, enable the ellipsoid model on a geom with `fluidshape`:
 
 ```xml
-<actuator>
-  <motor name="shoulder_motor" joint="shoulder" gear="1" ctrlrange="-2 2"/>
-  <position name="elbow_pos" joint="elbow" kp="50"/>
-</actuator>
+<geom type="box" size="0.2 0.15 0.1" density="1000"
+      fluidshape="ellipsoid"
+      fluidcoef="0.5 0.25 1.5 1.0 1.0"/>
 ```
 
-- **`motor`** applies raw torque (like Day 8 torque control).
-- **`position`** is a position servo with stiffness `kp` (like Day 8 position control).
-
-> 💡 This separation — structure in `worldbody`, motors in `actuator` — is a clean idea. You define *what the robot is* and *how it's driven* independently.
+The five `fluidcoef` numbers control blunt drag, slender drag, angular drag, and lift terms. You **tune these** until the body's drag looks right.
 
 ---
 
-## A Complete 2-Link Arm
+## Experiment: Drop a Body in Water
 
-Here's a full controllable arm. Save as `arm.xml` (also in this folder):
-
-```xml
-<mujoco model="two_link_arm">
-  <option gravity="0 0 -9.81"/>
-
-  <worldbody>
-    <light pos="0 0 3"/>
-    <geom name="floor" type="plane" size="3 3 0.1" rgba="0.8 0.9 0.8 1"/>
-
-    <body name="upper_arm" pos="0 0 1">
-      <joint name="shoulder" type="hinge" axis="0 1 0"/>
-      <geom type="capsule" fromto="0 0 0  0.5 0 0" size="0.05" rgba="0.2 0.4 0.9 1"/>
-
-      <body name="forearm" pos="0.5 0 0">
-        <joint name="elbow" type="hinge" axis="0 1 0"/>
-        <geom type="capsule" fromto="0 0 0  0.4 0 0" size="0.04" rgba="0.9 0.4 0.2 1"/>
-      </body>
-    </body>
-  </worldbody>
-
-  <actuator>
-    <position name="shoulder_pos" joint="shoulder" kp="100"/>
-    <position name="elbow_pos"    joint="elbow"    kp="100"/>
-  </actuator>
-</mujoco>
-```
-
-Note the `capsule fromto` — capsules are MuJoCo's favorite shape because they collide stably and cheaply (remember Day 2: simple collision shapes!).
-
-View it:
+See `water_drag.xml`. Drop a body with the medium set to water and watch it sink *slowly* (drag) instead of falling fast:
 
 ```bash
-python -m mujoco.viewer --mjcf=arm.xml
+python -m mujoco.viewer --mjcf=water_drag.xml
 ```
 
-Without gravity holding it, the arm hangs. The viewer even gives you sliders to move the actuators — try them!
+Compare: temporarily set `density="1.2"` (air) and it falls fast; `density="1000"` (water) and it drifts down gently. That difference *is* fluid drag.
 
 ---
 
-## Useful MJCF Extras
+## Tuning the 5 Ellipsoid Parameters
 
-- **`<default>`** — set default properties once (e.g., default geom size) so you don't repeat yourself.
-- **`<option timestep="0.002">`** — set the time step (Day 2!). MuJoCo's default is 0.002 s.
-- **`euler` / `quat`** on a body — set its orientation (Day 3 frames).
-- **`mass` / `density`** on geoms — MuJoCo auto-computes inertia for you (a nice convenience over URDF).
+There's no single correct set — tune for the behavior you want:
 
----
+- Body falls/accelerates too fast → increase drag coefficients.
+- Body stops too abruptly → decrease them.
+- Spins too freely → increase the angular drag term.
 
-## 📝 Today's Task
+Study MuJoCo's `balloons.xml` example to see fluid parameters used in a working model.
 
-1. Save `arm.xml` and open it in the viewer.
-2. Use the viewer's **actuator sliders** to move the shoulder and elbow.
-3. Add a **third link** (a "hand") nested inside the forearm, with its own hinge and actuator.
-4. Change a `position` actuator to a `motor` (torque) and feel the difference when you drag the arm.
-5. Set `<option timestep="0.01">` and observe whether the arm gets less stable (bigger step = Day 2 lesson).
+> Keep notes on which `fluidcoef` values give a "watery" feel — you'll reuse them on the vehicle in Phase 4.
 
 ---
 
-## ✅ Key Takeaways
-
-✓ In MJCF you build a robot by **nesting `<body>` tags** — the nesting *is* the kinematic tree.
-
-✓ Joint types: **`hinge`** (revolute), **`slide`** (prismatic), **`ball`**, **`free`**.
-
-✓ **Actuators** (in a separate block) drive joints: `motor` (torque) or `position` (servo with `kp`).
-
-✓ **Capsules** are the preferred shape — cheap and stable to collide.
-
-✓ MuJoCo **auto-computes inertia** from mass/density — less manual work than URDF.
+## ✅ Checkpoint
+**A body experiences realistic-looking drag in your sim** (sinks/glides like it's underwater, not in air).
 
 ---
 
-## 📚 References & Resources
-
-- [MJCF (XML) reference](https://mujoco.readthedocs.io/en/stable/XMLreference.html)
-- [MuJoCo modeling guide](https://mujoco.readthedocs.io/en/stable/modeling.html)
-- [MuJoCo Menagerie (study real robot models)](https://github.com/google-deepmind/mujoco_menagerie)
+## 📚 Resources
+- [MuJoCo fluid forces docs](https://mujoco.readthedocs.io/en/stable/computation/fluid.html)
+- `balloons.xml` example (in the MuJoCo model set) for fluid usage
 
 ---
 
-## 🔭 What's Next?
-
-**Day 13 — Simulating & Controlling from Python.** We leave the viewer's sliders behind and drive the arm from Python code — the way you'll actually build behaviors and RL environments.
-
----
-
-*"Nest the bodies, name the joints, wire the motors. That's a robot in MJCF."*
+## 🔭 Next
+**Day 13 — Buoyancy: make a body neutrally buoyant (hover), plus a light ROS 2 concepts skim.**

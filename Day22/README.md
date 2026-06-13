@@ -1,141 +1,90 @@
-# Day 22 — 🛠 Mini-Project: A Robot That Explores a World
+# Day 22 — Error Signals
 
-## 🎯 Today's Goal
-Bring the entire Gazebo phase together: write a ROS 2 node that reads the robot's LiDAR and autonomously drives it around your world while avoiding obstacles. Your first **autonomous** robot behavior.
+**Phase 5 · Teleoperation + Vision · ~3 hours**
 
----
-
-## Overview
-
-This is the Phase 4 capstone. You'll write a real ROS 2 node — the kind that runs on actual robots — that **subscribes** to LiDAR scans and **publishes** velocity commands to avoid walls. This "sense → think → act" loop is the foundation of all autonomy. Simple obstacle avoidance today; the same structure scales to full navigation systems.
+## 🎯 Goal
+Turn the detected line into two clean numbers your controller will use: **cross-track error** (how far off-center the line is) and **heading error** (how angled the line is). These two signals *are* the input to your autonomy.
 
 ---
 
-## The Autonomy Loop
+## The Two Errors
 
-Every autonomous robot runs this loop, and you'll implement it:
+A line-follower needs to know two things from the camera:
 
-```
-   ┌─────────────────────────────┐
-   │  SENSE  → read LiDAR (/scan) │
-   │  THINK  → decide: turn/go?   │
-   │  ACT    → publish /cmd_vel   │
-   └──────────────┬──────────────┘
-                  └── repeat forever
-```
-
----
-
-## The Logic: Reactive Obstacle Avoidance
-
-A simple, effective rule:
-
-- Look at the LiDAR distances **in front** of the robot.
-- If the path ahead is **clear** → drive forward.
-- If something is **close ahead** → stop going forward and **turn** until it's clear.
-
-That's it. No maps, no planning — just react to what you sense. It's surprisingly capable and teaches the core pattern.
-
----
-
-## The ROS 2 Node
-
-See `obstacle_avoider.py`. The essential structure of a ROS 2 Python node:
+### 1. Cross-track error — "am I left or right of the line?"
+The horizontal offset of the line's centroid from the image center:
 
 ```python
-import rclpy
-from rclpy.node import Node
-from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import Twist
-
-class ObstacleAvoider(Node):
-    def __init__(self):
-        super().__init__('obstacle_avoider')
-        # SENSE: subscribe to the LiDAR
-        self.sub = self.create_subscription(LaserScan, '/scan', self.on_scan, 10)
-        # ACT: publisher for velocity
-        self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
-
-    def on_scan(self, msg):
-        # look at the slice of beams directly ahead
-        n = len(msg.ranges)
-        front = msg.ranges[n//2 - 15 : n//2 + 15]
-        front = [r for r in front if r > 0.0]
-        nearest = min(front) if front else 999.0
-
-        cmd = Twist()
-        if nearest > 0.8:           # THINK: clear ahead?
-            cmd.linear.x = 0.4      # go
-        else:
-            cmd.angular.z = 0.6     # turn to avoid
-        self.pub.publish(cmd)       # ACT
-
-def main():
-    rclpy.init()
-    rclpy.spin(ObstacleAvoider())
-
-if __name__ == '__main__':
-    main()
+cross_track = cx - (image_width / 2)
+# negative = line is left of center; positive = right
+# normalize to [-1, 1] so gains are resolution-independent:
+cross_track /= (image_width / 2)
 ```
 
-Recognize the parts from the whole phase: subscribing to a sensor (Day 20), publishing `/cmd_vel` (Day 19), and the node/topic structure (Day 18). It all converges here.
+### 2. Heading error — "is the line angled relative to me?"
+The line's tilt in the image. Fit a line to the masked pixels and read its angle:
+
+```python
+# fit a straight line through the mask points
+ys, xs = np.where(mask > 0)
+if len(xs) > 10:
+    vx, vy, x0, y0 = cv2.fitLine(np.column_stack([xs, ys]),
+                                 cv2.DIST_L2, 0, 0.01, 0.01).flatten()
+    heading = np.arctan2(vx, vy)   # angle of the line vs image vertical
+```
+
+See `error_signals.py` for the full version.
 
 ---
 
-## Running It
+## Why Normalize?
 
-1. Launch your world + robot + sensor bridges (build a launch file from Day 18's pattern).
-2. Make sure `/scan` and `/cmd_vel` are bridged and Gazebo is **playing**.
-3. Run your node:
-   ```bash
-   python obstacle_avoider.py
-   ```
-4. Watch the robot drive itself, slow near obstacles, turn away, and continue. Open **RViz** (Day 21) alongside to *see* the LiDAR reasoning live.
+Dividing by half the image width makes `cross_track` range about `[-1, 1]` regardless of camera resolution. That means the PID gains you tune on Day 26 won't break if you change the image size — a small habit that saves real pain.
+
+---
+
+## Expose Them Cleanly
+
+Wrap detection so it returns just the two errors plus a "found" flag:
+
+```python
+def line_errors(rgb):
+    # ... detect, compute ...
+    return found, cross_track, heading
+```
+
+Your Day-26 controller will call exactly this. Keep it clean: vision in, two numbers out.
+
+---
+
+## Visualize to Trust It
+
+Overlay both errors on the image — a vertical center line, the detected centroid, and a printed `cross_track` / `heading`. Drive (teleop) and confirm:
+- Line drifts right → `cross_track` goes positive.
+- You yaw so the line tilts → `heading` changes sign.
+
+If the numbers move sensibly as you drive, they're ready to drive the vehicle back.
 
 ---
 
 ## 📝 Today's Task
-
-1. Get `obstacle_avoider.py` running and watch the robot explore autonomously.
-2. **Tune behavior:** change the `0.8 m` threshold and the forward/turn speeds — find a smooth wander.
-3. **Smarter turns:** compare the average distance on the left vs. right half of the scan and turn toward the *more open* side.
-4. Add obstacles to your Day-17 world and confirm the robot avoids the new ones.
-5. **Reflect:** in your log, describe how "sense → think → act" appears in your code.
+- Compute and normalize `cross_track` from the centroid.
+- Compute `heading` with `cv2.fitLine` on the mask.
+- Wrap it as `line_errors(rgb) -> (found, cross_track, heading)`.
+- Overlay the values and drive around to confirm both behave correctly.
 
 ---
 
-## 🏆 Phase 4 Complete!
-
-You can now install Gazebo + ROS 2, build worlds and robots in SDF, add sensors, bridge to ROS 2, visualize in RViz, and write autonomous nodes. This is the professional robotics simulation stack — a serious, job-relevant skill set. Outstanding work.
-
----
-
-## ✅ Key Takeaways
-
-✓ Autonomy is a loop: **sense (LiDAR) → think (decide) → act (`/cmd_vel`)**, repeated forever.
-
-✓ A ROS 2 node **subscribes** to sensors and **publishes** commands — the real-robot software pattern.
-
-✓ **Reactive avoidance** (turn when something's close ahead) needs no map yet is genuinely capable.
-
-✓ This project fuses the whole phase: SDF robot, sensors, bridge, nodes, and RViz.
-
-✓ The same structure scales up to full navigation stacks (e.g., Nav2).
+## ✅ Checkpoint
+**Two clean numeric error signals as the vehicle moves.**
 
 ---
 
-## 📚 References & Resources
-
-- [Writing a ROS 2 Python node](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Writing-A-Simple-Py-Publisher-And-Subscriber.html)
-- [sensor_msgs/LaserScan](https://docs.ros.org/en/api/sensor_msgs/html/msg/LaserScan.html)
-- [Nav2 — the ROS 2 navigation stack (where this leads)](https://docs.nav2.org/)
+## 📚 Resources
+- [OpenCV — `fitLine`](https://docs.opencv.org/4.x/d3/dc0/group__imgproc__shape.html)
+- [OpenCV — moments / centroids](https://docs.opencv.org/4.x/dd/d49/tutorial_py_contour_features.html)
 
 ---
 
-## 🔭 What's Next?
-
-**Day 23 — Intro to Reinforcement Learning.** New phase! Instead of *programming* behavior, we'll teach robots to *learn* it themselves — starting with the Gymnasium framework and the CartPole you already understand.
-
----
-
-*"You wrote code that decides for itself. That's the first step from automation to autonomy."*
+## 🔭 Next
+**Day 23 — Use the second (forward/stereo) camera for an altitude-hold or forward-view signal.**

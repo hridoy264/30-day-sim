@@ -1,111 +1,74 @@
-# Day 28 — Digital Twins & High-Fidelity Rendering
+# Day 28 — Simulated Turbidity / Domain Randomization
 
-## 🎯 Today's Goal
-Understand **digital twins** — living virtual replicas of real systems — and the role of high-fidelity rendering. See how simulation extends beyond training robots into operating and optimizing real-world systems.
+**Phase 6 · Autonomy + Robustness · ~3 hours**
 
----
-
-## Overview
-
-Simulation isn't only for *building* robots — increasingly it runs *alongside* them in production. A **digital twin** is a simulation that mirrors a real system in real time, fed by live data. This concept is reshaping manufacturing, logistics, and robotics. Today is a concept day that broadens your view of where simulation is headed and why your skills are valuable beyond the lab.
+## 🎯 Goal
+Fake real underwater conditions — murky water, color casts, changing light, noise — and make your line-follower survive them. This is **domain randomization** (Day 1's concept) made concrete, and it's what would make your system transfer to reality.
 
 ---
 
-## What is a Digital Twin?
+## Why Murky Water Matters
 
-A **digital twin** is a virtual replica of a physical object or system that stays synchronized with its real counterpart using live sensor data. Unlike a one-off simulation, a digital twin is *continuous* — it lives as long as the real thing does.
-
-The spectrum, from what you've built toward digital twins:
-
-| Level | Description | You did this in... |
-|-------|-------------|--------------------|
-| **Simulation** | a virtual model run offline | the whole course |
-| **Digital shadow** | real data flows *into* a virtual model (one-way) | reading sensors into RViz |
-| **Digital twin** | two-way: virtual and real stay in sync, decisions flow back | the frontier |
+Real underwater images are nothing like your clean sim: they're blue-green, low-contrast, hazy with suspended particles ("turbidity"), and unevenly lit. A detector tuned to one perfect look is brittle. By testing across many faked conditions, you force the detector to be robust — exactly the sim-to-real insight from Day 1.
 
 ---
 
-## What Digital Twins Are Used For
+## Faking Underwater Conditions
 
-- **Monitoring** — watch a virtual copy of a factory line or robot fleet in real time.
-- **Prediction** — run the twin *ahead* of reality to forecast failures or bottlenecks ("what will happen in an hour?").
-- **What-if testing** — try a change on the twin before touching the real system.
-- **Optimization** — continuously tune the real system using insights from the twin.
-- **Operator training** — train people on a realistic virtual replica safely.
+Apply these effects to the rendered camera image before detection (see `turbidity.py`):
 
-For robotics specifically: a digital twin of a warehouse lets you test new robot routes, retrain policies on the actual layout, and validate changes before deploying to real robots on the floor.
+```python
+def apply_water(img, tint=(1.1, 1.0, 0.7), haze=0.3, noise=8, blur=3):
+    out = img.astype(np.float32)
+    out *= np.array(tint)                          # blue-green color cast (BGR)
+    fog = np.full_like(out, 180)                    # hazy grey
+    out = (1 - haze) * out + haze * fog             # turbidity / haze
+    out += np.random.normal(0, noise, out.shape)    # sensor noise
+    out = np.clip(out, 0, 255).astype(np.uint8)
+    if blur: out = cv2.GaussianBlur(out, (blur, blur), 0)
+    return out
+```
 
----
+| Effect | Simulates |
+|--------|-----------|
+| color tint | blue-green absorption of water |
+| haze blend | turbidity / suspended particles |
+| Gaussian noise | camera sensor noise |
+| blur | water scattering, soft focus |
+| varied lighting | depth & sun position |
 
-## Why High-Fidelity Rendering Matters Here
-
-For control, crude graphics are fine (you've seen that all course). But digital twins and **vision-based** robots often need *realistic* rendering because:
-
-- **Vision models** trained on sim images must match what real cameras see (the Day-26 reality gap, but for pixels).
-- **Synthetic data** (Day 27) is only useful if it looks real enough to transfer.
-- **Human operators** of a digital twin need an intuitive, realistic view.
-
-This is why tools like Isaac Sim invest in ray tracing — photorealism is a *functional* requirement, not vanity, when pixels are part of the loop.
-
----
-
-## The USD Format
-
-Large-scale simulation and digital twins increasingly use **USD (Universal Scene Description)** — an open 3D scene format (originally from Pixar, adopted by NVIDIA Omniverse). USD is to complex 3D worlds what URDF is to a single robot: a way to compose huge scenes from many sources, collaboratively. Worth knowing the name; you'll meet it in industrial simulation.
+You can also vary the MuJoCo scene light intensity and the seabed/line colors between runs.
 
 ---
 
-## How This Connects to Your Skills
+## The Robustness Test
 
-Everything you learned scales toward this:
+1. Run autonomy under 3+ different `apply_water` settings (clear, murky-green, dim+noisy).
+2. Where the detector fails, **widen/adjust the HSV range** and lean on the morphology cleanup (Day 25).
+3. Goal: the *same* detector and gains follow the line across all conditions — no per-condition retuning.
 
-- Describing robots/worlds (URDF/SDF/MJCF/USD) → building twin assets.
-- Sensors and bridges (Phase 4) → feeding live data into a twin.
-- RL and domain randomization (Phase 5) → policies robust enough to deploy and keep improving.
-- High-fidelity sim (Phase 6) → twins realistic enough for vision and operators.
-
-A digital twin is essentially the *production deployment* of the simulation craft you've been learning.
+> If you must retune HSV for each condition, your range is too tight. Robustness means *one* setting that tolerates the whole range — that's the domain-randomization payoff.
 
 ---
 
 ## 📝 Today's Task
-
-A reflective, exploratory day:
-
-1. Pick a real system you know (a factory, a warehouse, a coffee machine, your room). Sketch what its **digital twin** would model and what live data would feed it.
-2. Identify which parts would need **high-fidelity rendering** and which wouldn't.
-3. Read one digital-twin case study (references) and note the business value it delivered.
-4. Map three skills from this course to building a digital twin (use the list above).
-5. **Reflect:** write down one application of digital twins you find genuinely exciting.
+- Add `apply_water()` and run it on the camera feed before detection.
+- Test autonomy under at least 3 distinct "water" conditions.
+- Adjust the detector (HSV width, morphology) until one setting handles all of them.
+- Save a clip of the vehicle tracking the line in murky water — great for the capstone.
 
 ---
 
-## ✅ Key Takeaways
-
-✓ A **digital twin** is a virtual replica kept in sync with a real system via live data — continuous, not one-off.
-
-✓ Spectrum: **simulation** → **digital shadow** (data in) → **digital twin** (two-way, in sync).
-
-✓ Uses: real-time monitoring, prediction, what-if testing, optimization, and operator training.
-
-✓ **High-fidelity rendering** is functional when **vision** or **human operators** are in the loop (the pixel-level reality gap).
-
-✓ **USD** is the emerging standard for composing large-scale 3D scenes and twins.
+## ✅ Checkpoint
+**Line-follower survives 3+ different "water" conditions.**
 
 ---
 
-## 📚 References & Resources
-
-- [What is a digital twin? (NVIDIA)](https://www.nvidia.com/en-us/omniverse/digital-twins/)
-- [OpenUSD overview](https://www.nvidia.com/en-us/omniverse/usd/)
-- [Digital twins in robotics & manufacturing (overview)](https://developer.nvidia.com/blog/tag/digital-twin/)
+## 📚 Resources
+- Day 1 (domain randomization concept); Day 25 (robust detection).
+- [OpenCV — image arithmetic & blur](https://docs.opencv.org/4.x/d2/de8/group__core__array.html)
 
 ---
 
-## 🔭 What's Next?
-
-**Day 29 — 🏁 The Capstone!** You'll combine everything — build a robot, place it in a world, add sensors, and give it a controller — into one complete project you can show off.
-
----
-
-*"A simulation predicts. A digital twin lives. You now understand both."*
+## 🔭 Next
+**Day 29 — Buffer + tuning: one repeatable launch script (build → teleop → autonomy).**

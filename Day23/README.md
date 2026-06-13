@@ -1,130 +1,68 @@
-# Day 23 — Intro to RL & the Gymnasium API
+# Day 23 — Second Camera Use
 
-## 🎯 Today's Goal
-Understand what reinforcement learning (RL) is, why simulation is essential to it, and learn the **Gymnasium** API — the standard interface that connects learning algorithms to simulated environments.
+**Phase 5 · Teleoperation + Vision · ~2.5 hours**
 
----
-
-## Overview
-
-Welcome to Phase 5 — where robots stop being *programmed* and start *learning*. On Day 15 you hand-tuned a CartPole controller and felt how fiddly it was. **Reinforcement learning** automates exactly that: the robot tries actions, gets rewards, and improves on its own. And here's the key connection — RL needs *millions* of trials, which is only practical in **simulation**. This is why everything you've learned matters: simulators are the training grounds of robot intelligence.
+## 🎯 Goal
+Put the forward/second camera to work — for **altitude-hold** over the seabed (keeping a steady height) or as a forward situational view. Keep it simple; one usable signal is the goal.
 
 ---
 
-## What is Reinforcement Learning?
+## Why a Second Camera?
 
-RL is learning by trial and error, formalized into a loop between an **agent** and an **environment**:
+The downward camera follows the line. The second camera adds a second sense — most usefully, *how high above the seabed am I?* Holding a steady altitude keeps the line in focus and at a consistent scale, which makes the Day-21 detection more reliable.
 
-```
-        ┌───────── action ─────────┐
-   ┌─────────┐                ┌──────────────┐
-   │  AGENT  │                │ ENVIRONMENT  │
-   │ (brain) │                │ (simulator)  │
-   └─────────┘                └──────────────┘
-        └──── observation + reward ┘
-```
+Pick **one** simple use; don't over-engineer:
 
-- The **agent** observes the environment's **state**.
-- It picks an **action**.
-- The environment returns a new state and a **reward** (a number: good or bad).
-- Over many tries, the agent learns a **policy** — a mapping from states to actions — that maximizes total reward.
-
-For CartPole: state = pole angle & cart position; action = push left/right; reward = +1 for every step the pole stays up. Maximize reward → keep the pole balanced. The agent *discovers* the controller you hand-tuned on Day 15.
-
----
-
-## Why Simulation is Essential for RL
-
-RL agents learn from huge numbers of trials — often **millions** of steps, including many failures. You can't crash a real robot a million times. In simulation you can, faster than real time and in parallel. **Simulation is the enabling technology of modern robot learning.** Everything in this course has been preparing you for this.
-
----
-
-## The Gymnasium API
-
-**Gymnasium** (the maintained successor to OpenAI Gym) is the universal standard for RL environments. Every environment — from CartPole to a humanoid — exposes the same handful of methods. Learn this tiny API and you can use thousands of environments and every major RL library.
-
-Install it (in your venv):
-
-```bash
-pip install gymnasium
-```
-
-The entire interface:
+### Option A — Altitude-hold via depth (simplest)
+You already enabled depth rendering on Day 10. Render the downward (or forward-down) depth image and read the distance to the seabed at the image center:
 
 ```python
-import gymnasium as gym
-
-env = gym.make("CartPole-v1", render_mode="human")
-
-observation, info = env.reset()       # start a new episode
-for _ in range(1000):
-    action = env.action_space.sample()           # pick an action (here: random)
-    observation, reward, terminated, truncated, info = env.step(action)
-    if terminated or truncated:                  # episode over (pole fell / time up)
-        observation, info = env.reset()
-env.close()
+renderer.enable_depth_rendering()
+renderer.update_scene(data, camera="down")
+depth = renderer.render()
+altitude = float(depth[depth.shape[0]//2, depth.shape[1]//2])   # meters to seabed
+renderer.disable_depth_rendering()
 ```
 
-That's it. Five concepts power all of RL:
+Then a simple P-controller on `heave` holds a target altitude:
 
-| Concept | Meaning |
-|---------|---------|
-| `reset()` | start a fresh episode, return first observation |
-| `step(action)` | apply an action, get `(obs, reward, terminated, truncated, info)` |
-| `observation_space` | the shape of what the agent sees |
-| `action_space` | the set of actions the agent can take |
-| **episode** | one attempt, from reset to termination |
+```python
+heave = Kp_alt * (target_altitude - altitude)
+```
+
+### Option B — Rough stereo / known-baseline trick
+If you mounted a forward stereo pair, estimate distance from disparity. This is more involved — only attempt if Option A bores you.
+
+### Option C — Forward view only
+Just display the forward camera for situational awareness (no signal). Perfectly fine if you're short on time — the line-follower works without it.
 
 ---
 
-## Reading the step() Return
+## Keep It Simple
 
-`step()` returns five things — know them well:
+The plan's guidance: **keep it simple.** Altitude-hold (Option A) gives the most value for the least code and directly improves line detection. Get one clean signal and move on — Phase 6 autonomy is where the time should go.
 
-- **observation** — the new state.
-- **reward** — the signal to maximize.
-- **terminated** — the task ended naturally (pole fell, goal reached).
-- **truncated** — the episode hit a time limit.
-- **info** — extra debug data (ignore for now).
+See `altitude_hold.py` for the Option-A pattern.
 
 ---
 
 ## 📝 Today's Task
-
-1. `pip install gymnasium` and run the random-action CartPole snippet above. Watch it flail — random actions can't balance the pole.
-2. Print `env.observation_space` and `env.action_space` — understand what CartPole sees and can do.
-3. Count how many steps the pole lasts with random actions (average over 10 episodes). This is your **baseline** to beat tomorrow.
-4. Try another env: `gym.make("MountainCar-v0", render_mode="human")` — same API, new problem.
-5. **Reflect:** write down the reward for CartPole and how it encourages balancing.
+- Implement altitude-hold (Option A): read seabed distance from the depth image, P-control `heave` to a target.
+- Confirm the vehicle settles to and holds a steady height.
+- (Or) wire the forward camera as a view, if you choose Option C.
 
 ---
 
-## ✅ Key Takeaways
-
-✓ **RL** = learning by trial and error: agent picks **actions**, environment returns **rewards**; the agent learns a **policy** that maximizes reward.
-
-✓ RL needs **millions of trials**, so it's only practical in **simulation** — the reason this whole course matters.
-
-✓ **Gymnasium** is the universal RL environment API: `reset()`, `step(action)`, `observation_space`, `action_space`.
-
-✓ `step()` returns **(observation, reward, terminated, truncated, info)**.
-
-✓ Random actions are a **baseline**; learning should beat it dramatically (Day 24).
+## ✅ Checkpoint
+**Second camera contributes a usable signal** (e.g., altitude-hold holds a steady height).
 
 ---
 
-## 📚 References & Resources
-
-- [Gymnasium documentation](https://gymnasium.farama.org/)
-- [Gymnasium basic usage](https://gymnasium.farama.org/introduction/basic_usage/)
-- [Sutton & Barto, *Reinforcement Learning* (free book)](http://incompleteideas.net/book/the-book-2nd.html)
+## 📚 Resources
+- [MuJoCo depth rendering](https://mujoco.readthedocs.io/en/stable/python.html#rendering)
+- [Stereo disparity basics (OpenCV)](https://docs.opencv.org/4.x/dd/d53/tutorial_py_depthmap.html)
 
 ---
 
-## 🔭 What's Next?
-
-**Day 24 — Training Your First Policy.** We bring in Stable-Baselines3 and actually *train* an agent to balance CartPole — automatically learning what you hand-tuned on Day 15.
-
----
-
-*"On Day 15 you found the controller. Now you'll teach a machine to find it itself."*
+## 🔭 Next
+**Day 24 — Buffer + logging: save frames and state to debug detection offline.**

@@ -1,134 +1,82 @@
-# Day 18 — Spawning a Robot & The ROS–Gazebo Bridge
+# Day 18 — Build the Seabed + Line
 
-## 🎯 Today's Goal
-Put a robot into your Gazebo world and connect it to ROS 2 through the bridge, so your code can send commands and receive data. This is the moment Gazebo becomes *robotics*, not just a physics demo.
+**Phase 4 · Build the Underwater Vehicle · ~2.5 hours**
 
----
-
-## Overview
-
-You have a world (Day 17). Now you need a robot in it, talking to ROS 2. Today covers two essential skills: **spawning** a robot into a running simulation, and setting up the **`ros_gz` bridge** so ROS 2 topics flow to and from Gazebo. Once this works, everything you know about ROS 2 controls a simulated robot exactly like a real one.
+## 🎯 Goal
+Add a textured seabed and a high-contrast line/pipe for the vehicle to follow, plus enough lighting/brightness that the downward camera sees it clearly. This is the scene your autonomy will run in.
 
 ---
 
-## ROS 2 in 90 Seconds (the parts you need)
+## The Seabed
 
-If you're new to ROS 2, here's the minimum:
+A textured floor reads as a seabed and gives the camera visual variety (so the line stands out). Use a checker texture via `<asset>`:
 
-- A **node** is a small program that does one job (e.g., "drive the wheels").
-- Nodes talk over **topics** — named channels carrying **messages** (e.g., `/cmd_vel` carries velocity commands).
-- **Publish** = send to a topic. **Subscribe** = receive from a topic.
-
-A robot is many nodes exchanging messages. Gazebo joins this conversation through the bridge.
-
----
-
-## Spawning a Robot
-
-With a Gazebo world running, spawn a robot from an SDF or URDF using the ROS 2 service:
-
-```bash
-ros2 run ros_gz_sim create -world my_world -file robot.sdf -name my_robot -z 0.5
+```xml
+<asset>
+  <texture name="seabed" type="2d" builtin="checker"
+           rgb1="0.2 0.3 0.35" rgb2="0.25 0.4 0.45" width="300" height="300"/>
+  <material name="seabed_mat" texture="seabed" texrepeat="20 20"/>
+</asset>
+...
+<geom name="seabed" type="plane" size="10 10 0.1" pos="0 0 -1.5"
+      material="seabed_mat"/>
 ```
 
-Or include it directly in the world's SDF (Day 17's `<include>`). Spawning at runtime is handy when you want to drop robots into an existing scene.
+---
 
-> 💡 You can convert the URDFs you wrote in Phase 1 into Gazebo robots — Gazebo understands URDF with some Gazebo-specific tags added. Reusing your earlier work is encouraged.
+## The Line
+
+The line is a long, thin, **high-contrast** geom laid on the seabed. Bright yellow on a blue-grey seabed is easy for the camera to threshold (Day 21):
+
+```xml
+<!-- straight line segment; add more segments later for curves -->
+<geom name="line" type="box" pos="0 0 -1.49" size="0.06 5 0.005"
+      rgba="1 0.85 0.1 1"/>
+```
+
+> For Day 27 (curves), you'll add several rotated/offset segments to form a curved path. A straight line is enough to get autonomy working first.
 
 ---
 
-## The Bridge: Connecting Gazebo ↔ ROS 2
+## Lighting / Vehicle Brightness
 
-Gazebo has its own internal topics; ROS 2 has its own. The **`ros_gz_bridge`** translates between them. You start it and tell it which topics to connect and their types:
+Underwater scenes are dark. Make sure the downward camera sees the line by adding light — either a scene light or a "vehicle light" that rides with the ROV:
 
-```bash
-ros2 run ros_gz_bridge parameter_bridge \
-  /cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist
+```xml
+<body name="rov" ...>
+  ...
+  <light name="headlight" pos="0 0 -0.05" dir="0 0 -1" diffuse="0.8 0.8 0.8"/>
+</body>
 ```
 
-Read that mapping as: *bridge the topic `/cmd_vel`, which is a ROS `Twist` message (`@...Twist`) and a Gazebo `Twist` message (`@gz.msgs.Twist`).* The `@` symbols separate the topic name, the ROS type, and the Gazebo type.
-
-Now anything published to `/cmd_vel` in ROS 2 reaches Gazebo, and vice versa.
+A downward light attached to the vehicle keeps the line lit no matter where the ROV goes — exactly like a real ROV's lamps.
 
 ---
 
-## Verifying the Connection
+## Full Scene
 
-Check that topics are flowing:
-
-```bash
-ros2 topic list                 # see /cmd_vel and others
-ros2 topic echo /cmd_vel        # watch messages arrive
-```
-
-Send a test command to make the robot move (if it has a drive plugin — that's Day 19):
-
-```bash
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.5}, angular: {z: 0.2}}"
-```
-
-If the robot moves in Gazebo from a ROS 2 command, your bridge works — a genuinely exciting milestone.
-
----
-
-## Launch Files: Doing It All at Once
-
-Typing all these commands every time is painful. ROS 2 **launch files** (Python) start the world, spawn the robot, and run the bridge in one command. A minimal sketch (`bringup.launch.py` in this folder shows a fuller version):
-
-```python
-from launch import LaunchDescription
-from launch_ros.actions import Node
-
-def generate_launch_description():
-    bridge = Node(
-        package='ros_gz_bridge', executable='parameter_bridge',
-        arguments=['/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist'],
-    )
-    return LaunchDescription([bridge])
-```
-
-Run with `ros2 launch bringup.launch.py`. You'll build these up over the next days.
+`auv_scene.xml` (provided) combines: tuned vehicle + thrusters + two cameras + seabed texture + line + vehicle light. **This file is your project base from here on.** Render the down camera and confirm the line is unmistakable.
 
 ---
 
 ## 📝 Today's Task
-
-1. Launch your Day-17 world: `gz sim my_world.sdf` (press play).
-2. Spawn a simple robot model into it with `ros2 run ros_gz_sim create ...`.
-3. Start a bridge for `/cmd_vel` and confirm with `ros2 topic list`.
-4. `ros2 topic echo /cmd_vel` in one terminal while you `ros2 topic pub` in another — watch messages flow.
-5. Write a minimal launch file that starts the bridge, and run it with `ros2 launch`.
+- Build `auv_scene.xml`: seabed texture + bright line + vehicle light.
+- Render the `down` camera; confirm the line is clearly visible and high-contrast.
+- Drive over the line and watch it pass through the downward view.
+- Tweak line color/width and lighting until detection will be easy.
 
 ---
 
-## ✅ Key Takeaways
-
-✓ ROS 2 basics: **nodes** talk over **topics** by **publishing** and **subscribing** to **messages**.
-
-✓ Spawn robots with `ros2 run ros_gz_sim create ...` (or `<include>` in the world SDF).
-
-✓ The **`ros_gz_bridge`** connects Gazebo topics to ROS 2 topics via `topic@ROStype@GZtype` mappings.
-
-✓ Verify with `ros2 topic list / echo / pub` — seeing the robot move from a ROS command is the milestone.
-
-✓ **Launch files** start the world, robot, and bridge together — your everyday workflow.
+## ✅ Checkpoint
+**The line is clearly visible in the downward camera.**
 
 ---
 
-## 📚 References & Resources
-
-- [ros_gz bridge documentation](https://github.com/gazebosim/ros_gz/tree/ros2/ros_gz_bridge)
-- [ROS 2 topics tutorial](https://docs.ros.org/en/humble/Tutorials/Beginner-CLI-Tools/Understanding-ROS2-Topics/Understanding-ROS2-Topics.html)
-- [ROS 2 launch files](https://docs.ros.org/en/humble/Tutorials/Intermediate/Launch/Launch-Main.html)
-- [Gazebo + ROS 2 integration tutorials](https://gazebosim.org/docs/harmonic/ros2_integration/)
+## 📚 Resources
+- [MuJoCo assets — textures & materials](https://mujoco.readthedocs.io/en/stable/XMLreference.html#asset)
+- [MuJoCo lights](https://mujoco.readthedocs.io/en/stable/XMLreference.html#body-light)
 
 ---
 
-## 🔭 What's Next?
-
-**Day 19 — A Differential-Drive Mobile Robot.** We build a proper two-wheeled robot with a drive plugin, so `/cmd_vel` commands actually make it roll around your world.
-
----
-
-*"The bridge is where simulation meets software. Cross it, and your code runs robots."*
+## 🔭 Next
+**Day 19 — Buffer + integration: get dynamics + thrusters + two cameras + scene all running in one loop.**

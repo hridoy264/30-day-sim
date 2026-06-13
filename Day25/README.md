@@ -1,160 +1,85 @@
-# Day 25 — Wrapping Your Own Simulator as a Gym Environment
+# Day 25 — Robustness Pass on Detection
 
-## 🎯 Today's Goal
-Build a **custom Gymnasium environment** around a simulator you control, so you can train RL on robots *you* design. This is the bridge between "running examples" and "doing your own RL research."
+**Phase 5 · Teleoperation + Vision · ~2.5 hours**
 
----
-
-## Overview
-
-Until now you trained on built-in environments. But the real power comes when *you* define the task: your robot, your reward, your goal. Today you learn the small recipe for turning any simulator into a Gym environment. Once you can do this, you can apply Stable-Baselines3 (Day 24) to anything you build in PyBullet, MuJoCo, or even Gazebo.
+## 🎯 Goal
+Make the detector steady, not jumpy: survive partial occlusion and brief line loss, and handle the line leaving the frame edge. A robust detector is what makes autonomy stable tomorrow.
 
 ---
 
-## What a Custom Environment Must Provide
+## Real Detectors Fail — Plan For It
 
-A Gymnasium environment is just a Python class with a few required pieces (from the Day-23 API):
-
-| Piece | What it defines |
-|-------|-----------------|
-| `__init__` | set `action_space` and `observation_space` |
-| `reset()` | start an episode, return first observation |
-| `step(action)` | apply action, return (obs, reward, terminated, truncated, info) |
-| `render()` | (optional) show it |
-
-Fill in those four and your simulator becomes trainable.
+Up to now you tested on a clean line. In motion, detection gets messy: the line partly leaves the frame, glare/shadow breaks the mask, or the vehicle briefly loses it on a turn. If your controller reacts to every jumpy reading, it'll wobble. Today you make detection *graceful*.
 
 ---
 
-## The Three Design Decisions
+## Robustness Techniques
 
-Building an RL environment is really about three choices. These matter far more than the code:
-
-1. **Observation** — what does the agent *see*? (joint angles, positions, sensor readings). Too little and it can't learn; too much and it learns slowly.
-2. **Action** — what can the agent *do*? (joint torques, target velocities). Match your control mode from Day 8/12.
-3. **Reward** — what makes an action *good*? This is the heart of RL. A good reward gently guides the agent toward the goal.
-
-> 💡 **Reward shaping is an art.** "Reward = +1 per step upright" works for CartPole. For reaching a target, reward = `-distance_to_target` pulls the arm closer each step. Sparse rewards (1 only at success) are hard to learn; shaped rewards (a hint every step) learn faster. Most RL failures are reward-design problems, not algorithm problems.
-
----
-
-## A Minimal Custom Environment (PyBullet)
-
-See `custom_env.py`. A skeleton for training a robot arm to reach a target:
+### 1. Smooth the error (low-pass filter)
+Don't trust a single noisy reading — blend with the previous value:
 
 ```python
-import gymnasium as gym
-import numpy as np
-import pybullet as p
-import pybullet_data
-
-class ReachEnv(gym.Env):
-    def __init__(self):
-        super().__init__()
-        # 1. spaces
-        self.action_space = gym.spaces.Box(-1, 1, shape=(2,), dtype=np.float32)
-        self.observation_space = gym.spaces.Box(-np.inf, np.inf, shape=(4,), dtype=np.float32)
-        p.connect(p.DIRECT)          # headless = fast for training (Day 6!)
-        p.setAdditionalSearchPath(pybullet_data.getDataPath())
-
-    def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
-        p.resetSimulation()
-        p.setGravity(0, 0, -9.81)
-        self.robot = p.loadURDF("kuka_iiwa/model.urdf", useFixedBase=True)
-        self.target = np.array([0.5, 0.0])
-        return self._obs(), {}
-
-    def step(self, action):
-        # 2. apply action (velocity on two joints)
-        for i in range(2):
-            p.setJointMotorControl2(self.robot, i, p.VELOCITY_CONTROL,
-                                    targetVelocity=float(action[i]) * 2)
-        p.stepSimulation()
-        obs = self._obs()
-        # 3. reward = closer is better
-        ee = np.array(p.getLinkState(self.robot, 6)[0][:2])
-        dist = np.linalg.norm(ee - self.target)
-        reward = -dist
-        terminated = dist < 0.05      # reached!
-        return obs, reward, terminated, False, {}
-
-    def _obs(self):
-        j0 = p.getJointState(self.robot, 0)[0]
-        j1 = p.getJointState(self.robot, 1)[0]
-        return np.array([j0, j1, *self.target], dtype=np.float32)
+cross_smooth = 0.7 * cross_smooth + 0.3 * cross_new
 ```
 
-Note `p.connect(p.DIRECT)` — headless mode from Day 6, which makes training fast because there's no rendering. This is why we learned both `GUI` and `DIRECT` early.
+This kills jitter while staying responsive.
+
+### 2. Handle "line lost"
+When no contour is found, **don't return garbage** — return the last known direction and a `lost` flag so the controller can act sensibly (slow down, search):
+
+```python
+if not found:
+    lost_frames += 1
+    return False, last_cross, last_heading
+else:
+    lost_frames = 0
+    last_cross, last_heading = cross, heading
+```
+
+### 3. Clean the mask (morphology)
+Remove speckle and fill gaps so contours are solid:
+
+```python
+kernel = np.ones((5, 5), np.uint8)
+mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)   # remove noise
+mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)  # fill holes
+```
+
+### 4. Ignore tiny blobs
+Reject contours below a minimum area so a stray pixel cluster doesn't masquerade as the line.
+
+### 5. Edge handling
+If the line's centroid is near the frame edge, that's a sign it's leaving — flag it so the controller can turn harder to recover.
+
+See `robust_detect.py` for all of these combined.
 
 ---
 
-## Training On Your Environment
+## Test It Hard
 
-Because it follows the Gym API, Day 24's code *just works* on it:
-
-```python
-from stable_baselines3 import PPO
-from custom_env import ReachEnv
-
-model = PPO("MlpPolicy", ReachEnv(), verbose=1)
-model.learn(total_timesteps=100_000)
-model.save("reach_ppo")
-```
-
-You designed the robot, the task, and the reward — and an agent learned to solve it. That's real RL engineering.
-
----
-
-## Validating Your Environment
-
-Before training for hours, sanity-check the env:
-
-```python
-from stable_baselines3.common.env_checker import check_env
-check_env(ReachEnv())   # flags shape/space bugs early
-```
-
-`check_env` catches the most common mistakes (wrong shapes, bad return types). Always run it on a new environment — it saves enormous debugging time.
+- Drive so the line briefly exits the frame — does the detector hold steady and recover?
+- Add a temporary occluder over part of the line — does morphology + min-area keep it tracking?
+- Confirm the error signal is smooth (no spikes) on your logged plot from Day 24.
 
 ---
 
 ## 📝 Today's Task
-
-1. Build `custom_env.py` (the ReachEnv above) and run `check_env` on it — fix any complaints.
-2. Train it with PPO for `100_000` steps; watch `ep_rew_mean` (less negative = closer to target).
-3. **Tune the reward:** add a bonus `+10` when `terminated` (reached). Does it learn faster?
-4. **Change the task:** randomize the target position each `reset()` so the agent generalizes.
-5. **Reflect:** write down your three design choices (observation, action, reward) and why.
+- Add smoothing, line-lost handling, morphology, min-area, and edge flags to your detector.
+- Replay your Day-24 logs and confirm the error trace is smooth and gap-tolerant.
+- Drive through occlusion/loss scenarios and verify steady recovery.
 
 ---
 
-## ✅ Key Takeaways
-
-✓ A custom Gym env is a class with **`__init__` (spaces), `reset()`, `step()`** — fill these and any sim is trainable.
-
-✓ The three real decisions are **observation, action, and reward** — they matter more than code.
-
-✓ **Reward shaping** (a hint every step, e.g. `-distance`) learns far faster than sparse rewards; most RL bugs are reward bugs.
-
-✓ Train headless (`p.DIRECT`) for speed — the reason Day 6 taught both GUI and DIRECT.
-
-✓ Run **`check_env`** before long training runs to catch common mistakes early.
+## ✅ Checkpoint
+**Detector is steady, not jumpy** (survives partial occlusion and brief line loss).
 
 ---
 
-## 📚 References & Resources
-
-- [Gymnasium: Make your own custom environment](https://gymnasium.farama.org/introduction/create_custom_env/)
-- [SB3 custom environments guide](https://stable-baselines3.readthedocs.io/en/master/guide/custom_env.html)
-- [Reward shaping overview](https://gymnasium.farama.org/introduction/basic_usage/)
+## 📚 Resources
+- [OpenCV — morphological transforms](https://docs.opencv.org/4.x/d9/d61/tutorial_py_morphological_ops.html)
+- [Low-pass / exponential smoothing](https://en.wikipedia.org/wiki/Exponential_smoothing)
 
 ---
 
-## 🔭 What's Next?
-
-**Day 26 — Sim-to-Real & Domain Randomization.** The big question: does a policy trained in simulation work on a *real* robot? We'll cover the reality gap and the clever trick that bridges it.
-
----
-
-*"When you can wrap your own robot as an environment, the entire RL toolkit becomes yours."*
+## 🔭 Next
+**Day 26 — Close the autonomy loop: errors → PID → thrust. The vehicle follows the line itself.**

@@ -1,156 +1,75 @@
-# Day 20 — Sensors in Gazebo: LiDAR, Camera & IMU
+# Day 20 — Teleoperation
 
-## 🎯 Today's Goal
-Give your mobile robot perception: add a **LiDAR**, a **camera**, and an **IMU**, then read their data on ROS 2 topics. These three sensors power most real-world robot navigation.
+**Phase 5 · Teleoperation + Vision · ~3 hours**
 
----
-
-## Overview
-
-Your robot can drive (Day 19) but it's blind. Today we add the perception trio that nearly every autonomous robot carries. In Gazebo, sensors are added as `<sensor>` tags on a link, activated by a system plugin, and their data is published to topics you bridge into ROS 2 — the same data a real robot's sensors would produce.
+## 🎯 Goal
+Fly the vehicle by hand: map keyboard (or gamepad) input to your thrust-vector command and drive it around the scene live. **Teleop = done** is today's milestone.
 
 ---
 
-## The Pattern: Sensor Tag + Plugin + Bridge
+## Why Teleop First
 
-Every Gazebo sensor follows three steps:
-
-1. **Declare** a `<sensor>` on a robot link in SDF.
-2. **Enable** the matching Gazebo **system plugin** in the world (e.g., the Sensors system).
-3. **Bridge** its topic into ROS 2 so your code can read it.
+Manual control proves your whole pipeline works — thrusters, allocation, dynamics, cameras — *before* you hand control to an algorithm. It's also the fallback mode in your final demo (drive to the line by hand, then switch to autonomy on Day 26).
 
 ---
 
-## Sensor 1 — LiDAR (laser scanner)
+## Keyboard Teleop
 
-LiDAR sweeps laser beams to measure distances all around — the backbone of obstacle avoidance and mapping. Add to your robot's base link:
+The cleanest approach on the Mac is to read keys through the OpenCV window (no extra dependency) and feed them into your Day-15 `allocate()`. See `teleop_keyboard.py`:
 
-```xml
-<sensor name="lidar" type="gpu_lidar">
-  <topic>scan</topic>
-  <update_rate>10</update_rate>
-  <lidar>
-    <scan><horizontal>
-      <samples>360</samples>          <!-- 360 beams = 1 per degree -->
-      <min_angle>-3.14159</min_angle>
-      <max_angle>3.14159</max_angle>
-    </horizontal></scan>
-    <range><min>0.1</min><max>10.0</max></range>
-  </lidar>
-</sensor>
+```python
+key = cv2.waitKey(1) & 0xFF
+surge = yaw = heave = 0.0
+if key == ord('w'): surge =  0.6     # forward
+if key == ord('s'): surge = -0.6     # back
+if key == ord('a'): yaw   =  0.5     # turn left
+if key == ord('d'): yaw   = -0.5     # turn right
+if key == ord('r'): heave =  0.5     # rise
+if key == ord('f'): heave = -0.5     # dive
+data.ctrl[:] = allocate(surge, yaw, heave)
 ```
 
-This is exactly the Day-9 ray-fan idea, now as a proper sensor. It publishes a `LaserScan` message of 360 distances.
+Hold-to-move feel: keep applying the command for a short window after each keypress, or use the gamepad approach below for smooth analog control.
 
 ---
 
-## Sensor 2 — Camera
+## Gamepad Teleop (smoother, optional)
 
-A camera gives the robot vision — for detection, line following, or just monitoring:
+A gamepad gives analog thrust via `pygame`:
 
-```xml
-<sensor name="camera" type="camera">
-  <topic>camera</topic>
-  <update_rate>30</update_rate>
-  <camera>
-    <horizontal_fov>1.047</horizontal_fov>   <!-- ~60 degrees -->
-    <image><width>640</width><height>480</height></image>
-    <clip><near>0.1</near><far>100</far></clip>
-  </camera>
-</sensor>
+```python
+import pygame
+pygame.init(); pygame.joystick.init()
+js = pygame.joystick.Joystick(0); js.init()
+# in the loop:
+pygame.event.pump()
+surge = -js.get_axis(1)     # left stick Y -> forward/back
+yaw   = -js.get_axis(0)     # left stick X -> turn
+heave = -js.get_axis(3)     # right stick Y -> up/down
 ```
 
-It publishes `Image` messages — view them live in RViz tomorrow.
-
----
-
-## Sensor 3 — IMU (inertial measurement unit)
-
-An IMU reports orientation, angular velocity, and linear acceleration — how the robot is tilting and accelerating. Essential for balancing and for fusing with odometry:
-
-```xml
-<sensor name="imu" type="imu">
-  <topic>imu</topic>
-  <update_rate>100</update_rate>
-</sensor>
-```
-
-It publishes `Imu` messages. This is the simulated version of the accelerometer/gyro from Day 14.
-
----
-
-## Enabling the Sensors System
-
-Sensors only produce data if the world loads the Sensors system plugin. Add to your world's `<world>`:
-
-```xml
-<plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
-  <render_engine>ogre2</render_engine>
-</plugin>
-<plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu"/>
-```
-
-> ⚠️ **Common gotcha:** a sensor declared but producing no data usually means the **Sensors system plugin is missing** from the world. Always check this first.
-
----
-
-## Bridging Sensor Data to ROS 2
-
-Bridge each topic with its message type (Day 18 pattern):
-
-```bash
-ros2 run ros_gz_bridge parameter_bridge \
-  /scan@sensor_msgs/msg/LaserScan@gz.msgs.LaserScan \
-  /imu@sensor_msgs/msg/Imu@gz.msgs.IMU
-```
-
-Then verify:
-
-```bash
-ros2 topic echo /scan      # see 360 distance values
-ros2 topic echo /imu       # see orientation & acceleration
-```
-
-When real sensor messages stream into ROS 2 from your simulated robot, you have a fully perceiving robot.
+Analog sticks feel far more like piloting an ROV than on/off keys.
 
 ---
 
 ## 📝 Today's Task
-
-1. Add a **LiDAR**, **camera**, and **IMU** to your Day-19 robot's SDF.
-2. Add the **Sensors** and **IMU** system plugins to your world.
-3. Bridge `/scan` and `/imu` into ROS 2.
-4. `ros2 topic echo /scan` and drive the robot toward an obstacle — watch the front distances shrink.
-5. `ros2 topic echo /imu` while turning — watch the angular velocity change.
+- Wire `teleop_keyboard.py` to your Day-18 scene and drive with `W/A/S/D/R/F`.
+- Fly a lap of the scene; follow the line *manually* to confirm the camera shows it well.
+- (Optional) Set up gamepad control with `pygame` for analog feel.
+- Fix any inverted control (a sign flip in `allocate` or the key mapping).
 
 ---
 
-## ✅ Key Takeaways
-
-✓ Every Gazebo sensor = **`<sensor>` tag** + **system plugin** in the world + **bridge** to ROS 2.
-
-✓ **LiDAR** publishes `LaserScan` (distances all around) — the basis of obstacle avoidance & mapping.
-
-✓ **Camera** publishes `Image` (robot vision); **IMU** publishes orientation/acceleration.
-
-✓ No sensor data? The **Sensors system plugin is probably missing** from the world.
-
-✓ Bridged sensor topics give your sim robot the same perception streams as real hardware.
+## ✅ Checkpoint
+**You can drive the vehicle manually. Teleop = DONE.**
 
 ---
 
-## 📚 References & Resources
-
-- [Gazebo: Sensors tutorial](https://gazebosim.org/docs/harmonic/sensors/)
-- [sensor_msgs/LaserScan](https://docs.ros.org/en/api/sensor_msgs/html/msg/LaserScan.html)
-- [Gazebo sensors SDF reference](http://sdformat.org/spec?ver=1.9&elem=sensor)
+## 📚 Resources
+- [OpenCV `waitKey` (keyboard input)](https://docs.opencv.org)
+- [pygame joystick docs](https://www.pygame.org/docs/ref/joystick.html)
 
 ---
 
-## 🔭 What's Next?
-
-**Day 21 — Teleop & Visualizing in RViz.** We'll drive the robot with your keyboard and use RViz, ROS 2's powerful visualization tool, to *see* the LiDAR scans and camera feed in real time.
-
----
-
-*"A robot's intelligence is only as good as its senses. Now yours can see, scan, and feel."*
+## 🔭 Next
+**Day 21 — OpenCV line detection: threshold the line and find it in the downward camera.**

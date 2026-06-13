@@ -1,141 +1,91 @@
-# 30 Days of Simulation 🦾🌍
+# 30 Days of Underwater Simulation 🌊🤖
 
-A free, beginner-friendly, project-based course that takes you from **zero** to building and controlling your own simulated robots. No expensive hardware required — just a laptop and curiosity.
+Build an **autonomous underwater line-following vehicle** in simulation — from zero to a full demo — in 30 focused days, entirely in **MuJoCo**, on hardware you already own.
 
-Simulation is where modern robotics, reinforcement learning, and AI are built and tested. Before a robot ever moves in the real world, it is born, trained, and debugged inside a simulator. This 30-day journey teaches you the four most important simulation tools used in industry and research today, one clean step at a time.
-
----
-
-## Who This Is For
-
-- Complete beginners who know a little Python (or are willing to learn as they go)
-- Robotics, AI, or game-dev students who want hands-on simulation skills
-- Hardware tinkerers who want to test ideas in software first
-- Anyone curious about how robots are trained before they touch the real world
-
-**Prerequisites:** Basic computer skills and a willingness to type commands. We explain everything else. Python basics help but are taught along the way.
+By Day 30 you'll have a MuJoCo underwater vehicle with two cameras that you can **teleoperate** (keyboard/gamepad) and that **autonomously follows a line on the seabed** using classic computer vision, tested under varied (simulated) water conditions.
 
 ---
 
-## What You'll Learn
+## Why This Plan (and This Tool)
 
-By Day 30 you will be able to:
+This course is deliberately built around real hardware constraints:
 
-- Explain how physics simulators work under the hood
-- Describe robots and worlds using URDF, SDF, and MJCF
-- Build and control robots in **PyBullet**, **MuJoCo**, and **Gazebo (with ROS 2)**
-- Add sensors — cameras, LiDAR, IMU, contact sensors — to simulated robots
-- Train a robot to balance and walk using **reinforcement learning**
-- Understand **sim-to-real** and why simulation matters for real robots
-- Know when and why to reach for **NVIDIA Isaac Sim** and digital twins
-- Ship a capstone project: a sensored robot in a world that you built and controlled
+- **Primary machine: M4 MacBook Air.** All MuJoCo work, vision, and Python live here. MuJoCo runs natively on Apple Silicon, models underwater dynamics (buoyancy + fluid drag + thrusters), and renders two cameras — **no dedicated GPU required**.
+- **Secondary machine: Core i5 Linux laptop.** Used for practicing ROS 2 concepts and *optionally* attempting the Stonefish photorealistic track later.
+- **Stonefish is an optional follow-on** (see `APPENDIX_Stonefish.md`) because its camera sim needs OpenGL 4.3+, which macOS doesn't provide. Your control + vision code ports over when you get GPU access — only the simulator host changes.
+
+**Time budget:** ~2.5–3 focused hours/day, split into blocks. Skip "Stretch" items to compress.
 
 ---
 
-## The 30-Day Roadmap
+## What You'll Build, Phase by Phase
 
-### Phase 1 — Foundations (Days 1–5)
-Build the mental model before touching tools.
+| Phase | Days | Outcome |
+|-------|------|---------|
+| **1 — Orientation & Setup** | 1–3 | MuJoCo running on your Mac; you can read an MJCF file |
+| **2 — MuJoCo Fundamentals** | 4–10 | Pendulum, cart-pole, **a working PID loop**, contacts, sensors, **camera→NumPy rendering** |
+| **3 — Marine Dynamics + Fluid** | 11–13 | Realistic drag, and a **neutrally buoyant** body in "water" |
+| **4 — Build the Vehicle** | 14–19 | A thruster-driven 6-DOF ROV with two cameras over a seabed line |
+| **5 — Teleop + Vision** | 20–25 | **Manual flight** + an OpenCV line detector producing clean error signals |
+| **6 — Autonomy + Robustness** | 26–30 | **Autonomous line-following**, curve/loss recovery, turbidity testing, capstone demo |
 
-| Day | Topic |
-|-----|-------|
-| 01 | What is Simulation & Why It Matters |
-| 02 | How Physics Engines Work (rigid bodies, time steps, collisions) |
-| 03 | The Math You Need: Frames, Transforms & Units |
-| 04 | Setting Up Your Simulation Environment |
-| 05 | Describing Robots & Worlds: URDF, SDF & MJCF |
+---
 
-### Phase 2 — PyBullet: Your First Simulator (Days 6–10)
-The easiest entry point. Pure Python, runs anywhere.
+## The Three Skills That Carry the Whole Project
 
-| Day | Topic |
-|-----|-------|
-| 06 | Hello PyBullet: Your First Simulation |
-| 07 | Loading Robots & Worlds from URDF |
-| 08 | Controlling Joints: Position, Velocity & Torque |
-| 09 | Adding Sensors: Cameras, Rays & Contacts |
-| 10 | 🛠 Mini-Project: A Robot Arm That Picks Things Up |
+1. **The control loop** (Day 6 PID) — *the most important skill of the month.* Everything downstream is a control loop.
+2. **Camera → image array** (Day 10) — the bridge between physics and your vision pipeline.
+3. **Error signal → controller** (Days 22 & 26) — turning what the camera sees into thrust commands.
 
-### Phase 3 — MuJoCo: Accurate Physics for Learning (Days 11–15)
-The simulator behind most modern robotics research.
-
-| Day | Topic |
-|-----|-------|
-| 11 | Hello MuJoCo: Install & First Model |
-| 12 | Building Models in MJCF |
-| 13 | Simulating & Controlling from Python |
-| 14 | Sensors & Contacts in MuJoCo |
-| 15 | 🛠 Mini-Project: Balancing a CartPole |
-
-### Phase 4 — Gazebo + ROS 2: Industry-Standard Robotics (Days 16–22)
-The simulator used to build real robots, connected to ROS 2.
-
-| Day | Topic |
-|-----|-------|
-| 16 | Hello Gazebo: Install & The Simulator Tour |
-| 17 | Building Worlds with SDF |
-| 18 | Spawning a Robot & The ROS–Gazebo Bridge |
-| 19 | A Differential-Drive Mobile Robot |
-| 20 | Sensors in Gazebo: LiDAR, Camera & IMU |
-| 21 | Teleop & Visualizing in RViz |
-| 22 | 🛠 Mini-Project: A Robot That Explores a World |
-
-### Phase 5 — Reinforcement Learning in Simulation (Days 23–26)
-Teach robots to learn by themselves.
-
-| Day | Topic |
-|-----|-------|
-| 23 | Intro to RL & the Gymnasium API |
-| 24 | Training Your First Policy with Stable-Baselines3 |
-| 25 | Wrapping Your Own Simulator as a Gym Environment |
-| 26 | Sim-to-Real & Domain Randomization |
-
-### Phase 6 — Advanced & Capstone (Days 27–30)
-The frontier, then put it all together.
-
-| Day | Topic |
-|-----|-------|
-| 27 | NVIDIA Isaac Sim & GPU-Accelerated Simulation |
-| 28 | Digital Twins & High-Fidelity Rendering |
-| 29 | 🏁 Capstone: Build, Sensor & Control Your Own Robot |
-| 30 | Wrap-Up, Portfolio & Where to Go Next |
+If you nail these three, the project works.
 
 ---
 
 ## How to Use This Course
 
-1. **One day at a time.** Each `DayXX/` folder has a `README.md` with a clear goal, the concepts, and a short hands-on task. Don't rush — consistency beats speed.
-2. **Always do the "Today's Task."** Reading is not learning. Type the code, break it, fix it.
-3. **Keep a log.** A sentence a day about what you learned compounds fast.
-4. **Share progress.** Post with **#30DaysOfSimulation** and connect with others learning alongside you.
-
-Each day is designed to take **30–90 minutes**.
+1. **One day at a time.** Each `DayXX/` folder has a `README.md` with the day's blocks, a clear **Checkpoint**, resources, and starter code/MJCF where useful.
+2. **Hit the Checkpoint before moving on.** Each day ends with a concrete, testable checkpoint. That's your gate.
+3. **Use the buffer days** (7, 19, 24, 29) to absorb slippage — falling behind is normal and planned for.
+4. **Track your progress.** Open `progress-tracker.html` in your browser to check off days and checkpoints (it saves automatically), or use `PROGRESS.md`.
 
 ---
 
-## Tools You'll Install (all free)
+## Setup Before Day 1
 
-| Tool | Used In | Why |
-|------|---------|-----|
-| **Python 3.10+** | Everything | The glue language of simulation |
-| **PyBullet** | Days 6–10 | Easiest simulator to start with |
-| **MuJoCo** | Days 11–15 | Accurate physics, research standard |
-| **Gazebo (Harmonic) + ROS 2** | Days 16–22 | Industry robotics simulation |
-| **Gymnasium + Stable-Baselines3** | Days 23–26 | Reinforcement learning |
-| **NVIDIA Isaac Sim** | Days 27–28 | GPU sim (overview; optional GPU) |
+- **Mac (primary):** Install Xcode Command Line Tools, Python 3, a virtual environment, and Git.
+- **Linux (secondary):** Only needed for optional ROS 2 practice / Stonefish later.
+- **Skills assumed:** comfortable Python and terminal. **No C++ required** for the MuJoCo path.
 
-> 💡 **Operating system tip:** Ubuntu Linux (22.04/24.04) gives the smoothest experience, especially for ROS 2 and Gazebo. On Windows, use **WSL2**. On macOS, PyBullet and MuJoCo work natively; use a cloud/Linux machine for the Gazebo days.
-
----
-
-## A Note From Your Instructor
-
-This material is written as if a senior simulation engineer were sitting next to you — explaining not just *what* to type, but *why* it works and *where* it breaks. Simulation has a reputation for being fiddly. The secret is to start simple, build one concept at a time, and never skip the hands-on part.
-
-You don't need a powerful computer or a real robot to become genuinely good at this. You need 30 days and the willingness to keep going.
-
-Let's build. 🚀
+```bash
+# on the Mac
+xcode-select --install
+python3 -m venv venv && source venv/bin/activate
+pip install --upgrade pip
+pip install mujoco numpy opencv-python matplotlib
+```
 
 ---
 
-*"The best way to predict the behavior of a robot is to simulate it first."*
+## Adapting the Plan
+
+- **Behind schedule?** Buffer days (7, 19, 24, 29) absorb slippage.
+- **Already know control/ROS?** Compress Phases 2–3, spend the saved days on Phase 5–6 robustness.
+- **MuJoCo water looks unrealistic?** Expected — it's the tradeoff for running on your hardware. Photorealism is the Stonefish track's job, later.
+
+---
+
+## Repository Layout
+
+```
+30daysim/
+├── README.md                     ← you are here
+├── PROGRESS.md                   ← checkbox tracker (markdown)
+├── progress-tracker.html         ← interactive tracker (saves your progress)
+├── APPENDIX_Stonefish.md         ← optional photorealistic track (needs GPU)
+├── Day01/ … Day30/               ← daily lessons + starter code
+└── 30-day-underwater-sim-plan(1).md   ← your original source plan
+```
+
+---
+
+*"You don't need a pool, a robot, or a GPU to build an autonomous submarine. You need MuJoCo and 30 days."* 🌊

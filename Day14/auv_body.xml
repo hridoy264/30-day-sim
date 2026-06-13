@@ -1,0 +1,17 @@
+<mujoco model="auv">
+  <option gravity="0 0 -9.81" timestep="0.004" density="1000" viscosity="0.001"/>
+
+  <worldbody>
+    <light pos="0 0 3"/>
+    <geom type="plane" size="10 10 0.1" pos="0 0 -3" rgba="0.25 0.35 0.45 1"/>
+
+    <body name="rov" pos="0 0 0" gravcomp="1">      <!-- neutral buoyancy -->
+      <freejoint/>
+      <geom type="box" size="0.23 0.15 0.10" density="1000"
+            fluidshape="ellipsoid" fluidcoef="0.5 0.25 1.5 1.0 1.0"
+            rgba="0.95 0.65 0.15 1"/>
+      <geom type="capsule" fromto="0.23 0 0  0.30 0 0" size="0.02"
+            rgba="0.1 0.1 0.1 1"/>
+    </body>
+  </worldbody>
+</mujoco>

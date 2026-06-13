@@ -1,145 +1,81 @@
-# Day 17 — Building Worlds with SDF
+# Day 17 — Mount Two Cameras
 
-## 🎯 Today's Goal
-Build a custom Gazebo world from scratch using SDF: a ground plane, lighting, physics settings, and obstacles. You'll create the stage your robot will explore in later days.
+**Phase 4 · Build the Underwater Vehicle · ~3 hours**
 
----
-
-## Overview
-
-On Day 5 you met **SDF** (Simulation Description Format) — Gazebo's native XML for describing *entire worlds*, not just robots. Today you write one. A "world" in Gazebo is everything: the ground, the sky, lights, physics parameters, and any static objects. Building one yourself demystifies every Gazebo demo you'll ever open.
+## 🎯 Goal
+Add two `<camera>` elements to the vehicle — one **downward** (for line-following) and one **forward** — and render both offscreen to image arrays at the same time.
 
 ---
 
-## Anatomy of an SDF World
+## Adding the Cameras
 
-An SDF world file has a clear structure:
+Cameras are children of the vehicle body, so they move with it. Add to your tuned `auv` model (see `auv_cameras.xml`):
 
 ```xml
-<?xml version="1.0"?>
-<sdf version="1.8">
-  <world name="my_world">
+<body name="rov" pos="0 0 0" gravcomp="1">
+  <freejoint/>
+  <geom type="box" size="0.23 0.15 0.10" .../>
+  ...thrusters...
 
-    <!-- physics: the time step from Day 2! -->
-    <physics name="default" type="ignored">
-      <max_step_size>0.001</max_step_size>
-      <real_time_factor>1.0</real_time_factor>
-    </physics>
-
-    <!-- a light source -->
-    <light name="sun" type="directional">
-      <pose>0 0 10 0 0 0</pose>
-      <direction>-0.5 0.1 -0.9</direction>
-    </light>
-
-    <!-- the ground -->
-    <model name="ground_plane">
-      <static>true</static>
-      <link name="link">
-        <collision name="collision">
-          <geometry><plane><normal>0 0 1</normal></plane></geometry>
-        </collision>
-        <visual name="visual">
-          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
-        </visual>
-      </link>
-    </model>
-
-  </world>
-</sdf>
+  <!-- downward camera: looks at the seabed for the line -->
+  <camera name="down" pos="0 0 -0.10" euler="3.14159 0 0" fovy="70"/>
+  <!-- forward camera: looks ahead -->
+  <camera name="front" pos="0.24 0 0" euler="1.5708 0 -1.5708" fovy="60"/>
+</body>
 ```
 
-Notice the familiar pieces: `physics` (your Day-2 time step), `light`, and a `model` with `collision` + `visual` (Day 5). The `<static>true</static>` tag means the ground never moves — important for fixed scenery.
+- `pos` is relative to the vehicle body (it rides along).
+- `euler` aims the camera — `down` points at the seabed; `front` points along the vehicle's forward axis.
+- `fovy` is the vertical field of view in degrees.
+
+> Aiming cameras is fiddly. Render, look, adjust `euler`, repeat. The downward camera **must** clearly see the floor beneath the vehicle.
 
 ---
 
-## Adding Obstacles
+## Rendering Both Feeds
 
-Let's add a box obstacle the robot will later avoid. Inside `<world>`:
+Use one `Renderer` and switch the camera each call (see `two_cameras.py`):
 
-```xml
-<model name="box_obstacle">
-  <static>true</static>
-  <pose>2 0 0.5 0 0 0</pose>   <!-- x y z roll pitch yaw -->
-  <link name="link">
-    <collision name="collision">
-      <geometry><box><size>1 1 1</size></box></geometry>
-    </collision>
-    <visual name="visual">
-      <geometry><box><size>1 1 1</size></box></geometry>
-      <material><ambient>0.8 0.2 0.2 1</ambient></material>
-    </visual>
-  </link>
-</model>
+```python
+import mujoco, numpy as np, cv2
+renderer = mujoco.Renderer(model, 240, 320)
+
+def grab(cam):
+    renderer.update_scene(data, camera=cam)
+    return renderer.render()                 # RGB array
+
+while running:
+    mujoco.mj_step(model, data)
+    down  = grab("down")
+    front = grab("front")
+    # show side by side
+    combo = np.hstack([cv2.cvtColor(down,  cv2.COLOR_RGB2BGR),
+                       cv2.cvtColor(front, cv2.COLOR_RGB2BGR)])
+    cv2.imshow("down | front", combo); cv2.waitKey(1)
 ```
 
-The `<pose>` is the same 6 numbers you know: x, y, z, roll, pitch, yaw (Day 3). `<material>` sets its color.
-
----
-
-## Reusing Models with `<include>`
-
-You rarely build everything by hand. Gazebo has an online model library (Fuel) you can pull from:
-
-```xml
-<include>
-  <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construction Cone</uri>
-  <pose>3 1 0 0 0 0</pose>
-</include>
-```
-
-`<include>` lets you drop in pre-made, high-quality models (cones, tables, buildings, even robots) instead of writing them. This is how real worlds are assembled quickly.
-
----
-
-## Running Your World
-
-Save your file as `my_world.sdf` (a starter is in this folder) and launch:
-
-```bash
-gz sim my_world.sdf
-```
-
-Press **play**. You should see your ground, your lighting, and your red box obstacle. You built a world.
+> One `Renderer` reused for both cameras is fine and efficient on the M4. Avoid creating a new `Renderer` every frame — that leaks memory.
 
 ---
 
 ## 📝 Today's Task
-
-1. Create `my_world.sdf` with a ground plane, a sun light, and physics settings.
-2. Launch it with `gz sim my_world.sdf` and press play.
-3. Add **two box obstacles** at different poses and colors.
-4. Add a **cylinder** obstacle (swap `<box>` for `<cylinder><radius>...<length>...`).
-5. Try an `<include>` to pull a model from Gazebo Fuel (needs internet). Arrange a small "course" your future robot can navigate.
+- Add `down` and `front` cameras to the vehicle.
+- Render both and show them side by side.
+- Drive the vehicle (Day 15 command) and confirm both feeds move with it.
+- Adjust `down` until the floor directly below is centered in its view.
 
 ---
 
-## ✅ Key Takeaways
-
-✓ **SDF worlds** describe everything: physics, lights, ground, and objects.
-
-✓ `<physics>` holds your **time step** (Day 2); `<static>true</static>` fixes scenery in place.
-
-✓ Objects use the same **`collision` + `visual` + `pose`** pattern as Day 5, with `<material>` for color.
-
-✓ **`<include>`** pulls ready-made models from Gazebo **Fuel** — assemble worlds fast.
-
-✓ Launch any world with `gz sim <file>.sdf` (and remember to press play).
+## ✅ Checkpoint
+**Two live camera image streams from the moving vehicle.**
 
 ---
 
-## 📚 References & Resources
-
-- [SDFormat specification](http://sdformat.org/spec)
-- [Gazebo: Building your own world](https://gazebosim.org/docs/harmonic/sdf_worlds/)
-- [Gazebo Fuel model library](https://app.gazebosim.org/fuel)
+## 📚 Resources
+- [MuJoCo camera (XML)](https://mujoco.readthedocs.io/en/stable/XMLreference.html#body-camera)
+- [MuJoCo rendering](https://mujoco.readthedocs.io/en/stable/python.html#rendering)
 
 ---
 
-## 🔭 What's Next?
-
-**Day 18 — Spawning a Robot & The ROS–Gazebo Bridge.** We put a robot into your world and connect it to ROS 2, so your code can finally talk to a Gazebo robot.
-
----
-
-*"A robot needs a stage. Today you built one."*
+## 🔭 Next
+**Day 18 — Build the seabed and a high-contrast line for the downward camera to follow.**

@@ -1,151 +1,90 @@
-# Day 15 — 🛠 Mini-Project: Balancing a CartPole
+# Day 15 — Thrusters
 
-## 🎯 Today's Goal
-Build the classic **CartPole** in MuJoCo and write a controller that balances the pole upright. You'll combine modeling, sensing, and feedback control — and create the exact environment you'll later solve with reinforcement learning.
+**Phase 4 · Build the Underwater Vehicle · ~3 hours**
 
----
-
-## Overview
-
-CartPole is the "hello world" of control and RL: a cart that slides left/right with a pole hinged on top. Push the cart correctly and the pole stays balanced; do nothing and it falls. It's simple to build, instantly visual, and teaches the single most important control idea — **feedback**. Building it yourself today makes Phase 5 (RL) click immediately, because you'll *understand* the problem the AI is solving.
+## 🎯 Goal
+Add thrusters to the vehicle and map a high-level **thrust-vector command** (forward / yaw / vertical) to individual thruster forces. This mapping is called **control allocation**, and it's how you'll command the vehicle for the rest of the project.
 
 ---
 
-## The Model
+## Thrusters in MuJoCo
 
-A cart (slides along X) with a pole (hinges) on top. Save as `cartpole.xml` (also in this folder):
+A thruster is a force applied at a point on the body. You place a `<site>` where each thruster sits and attach a force `<actuator>` to it. Start with 4–6 thrusters in a vectored layout. See `auv_thrusters.xml`:
 
 ```xml
-<mujoco model="cartpole">
-  <option gravity="0 0 -9.81" timestep="0.01"/>
-
-  <worldbody>
-    <light pos="0 0 3"/>
-    <geom name="floor" type="plane" size="5 5 0.1" rgba="0.8 0.9 0.8 1"/>
-    <geom name="rail" type="capsule" fromto="-3 0 0.5  3 0 0.5" size="0.02" rgba="0.5 0.5 0.5 1"/>
-
-    <body name="cart" pos="0 0 0.5">
-      <joint name="slider" type="slide" axis="1 0 0"/>
-      <geom name="cart" type="box" size="0.2 0.15 0.1" rgba="0.2 0.4 0.9 1"/>
-
-      <body name="pole" pos="0 0 0.1">
-        <joint name="hinge" type="hinge" axis="0 1 0"/>
-        <geom name="pole" type="capsule" fromto="0 0 0  0 0 0.6" size="0.04" rgba="0.9 0.4 0.2 1"/>
-      </body>
-    </body>
-  </worldbody>
-
-  <actuator>
-    <motor name="cart_motor" joint="slider" gear="50" ctrlrange="-1 1"/>
-  </actuator>
-
-  <sensor>
-    <jointpos name="cart_pos"  joint="slider"/>
-    <jointpos name="pole_angle" joint="hinge"/>
-    <jointvel name="pole_vel"  joint="hinge"/>
-  </sensor>
-</mujoco>
+<body name="rov" pos="0 0 0" gravcomp="1">
+  <freejoint/>
+  <geom type="box" size="0.23 0.15 0.10" density="1000"
+        fluidshape="ellipsoid" fluidcoef="0.5 0.25 1.5 1.0 1.0"/>
+  <!-- two horizontal thrusters (left & right rear) for surge + yaw -->
+  <site name="t_left"  pos="-0.2  0.12 0" zaxis="1 0 0"/>
+  <site name="t_right" pos="-0.2 -0.12 0" zaxis="1 0 0"/>
+  <!-- two vertical thrusters for heave -->
+  <site name="t_vup_f" pos=" 0.15 0 0.06" zaxis="0 0 1"/>
+  <site name="t_vup_b" pos="-0.15 0 0.06" zaxis="0 0 1"/>
+</body>
+...
+<actuator>
+  <!-- 'thruster' actuators apply force along the site's z-axis -->
+  <thruster site="t_left"  name="m_left"  gear="5" ctrlrange="-1 1"/>
+  <thruster site="t_right" name="m_right" gear="5" ctrlrange="-1 1"/>
+  <thruster site="t_vup_f" name="m_vf"    gear="5" ctrlrange="-1 1"/>
+  <thruster site="t_vup_b" name="m_vb"    gear="5" ctrlrange="-1 1"/>
+</actuator>
 ```
 
-One actuator pushes the cart; three sensors report cart position, pole angle, and pole angular velocity — everything a controller needs.
+The `zaxis` of each site sets the direction the thruster pushes. The horizontal pair (`t_left`, `t_right`) pushes forward; the vertical pair lifts.
 
 ---
 
-## The Controller: Feedback in Action
+## Control Allocation (the key skill)
 
-A simple **proportional-derivative (PD)** rule balances the pole: push the cart in the direction the pole is *falling*, proportional to how far it's tilted and how fast it's tipping.
+You don't want to think in individual motors — you want to command **surge** (forward), **yaw** (turn), and **heave** (up/down). Control allocation converts those into motor commands:
+
+```
+m_left  = surge + yaw          # differential -> turning
+m_right = surge - yaw
+m_vf    = heave
+m_vb    = heave
+```
+
+See `thrust_allocation.py`:
 
 ```python
-# pole_angle: 0 = upright.  Push the cart to counter the tilt.
-force = Kp * pole_angle + Kd * pole_velocity
-data.ctrl[0] = clip(force, -1, 1)
+def allocate(surge, yaw, heave):
+    return [
+        surge + yaw,   # m_left
+        surge - yaw,   # m_right
+        heave,         # m_vf
+        heave,         # m_vb
+    ]
+# each step:
+data.ctrl[:] = np.clip(allocate(surge, yaw, heave), -1, 1)
 ```
 
-That's the entire idea of feedback control: **measure the error, act to reduce it.** Two gains (`Kp`, `Kd`) and you can balance a pole.
-
----
-
-## Full Program
-
-See `cartpole_balance.py`:
-
-```python
-import time, numpy as np, mujoco, mujoco.viewer
-
-model = mujoco.MjModel.from_xml_path("cartpole.xml")
-data  = mujoco.MjData(model)
-
-# start the pole slightly tilted so there's something to correct
-data.qpos[1] = 0.1
-mujoco.mj_forward(model, data)
-
-Kp, Kd = 8.0, 1.5
-with mujoco.viewer.launch_passive(model, data) as viewer:
-    while viewer.is_running():
-        pole_angle = data.sensordata[1]
-        pole_vel   = data.sensordata[2]
-        data.ctrl[0] = np.clip(Kp*pole_angle + Kd*pole_vel, -1, 1)
-        mujoco.mj_step(model, data)
-        viewer.sync()
-        time.sleep(model.opt.timestep)
-```
-
-Run it. The pole wobbles, the cart darts to catch it, and it balances. **You just wrote a controller** — congratulations.
-
----
-
-## Tuning (and why it matters for RL)
-
-- **`Kp` too low** → the cart reacts too weakly, pole falls.
-- **`Kp` too high** → the cart overshoots and oscillates.
-- **`Kd`** damps the oscillation.
-
-Hand-tuning these gains shows you how hard control can be even for a simple system. **This is exactly the problem reinforcement learning automates** — in Phase 5, an algorithm will *learn* a controller for this same CartPole without you tuning anything. Today you earn the right to appreciate that.
+Now "drive forward and turn left" is just `allocate(0.6, 0.3, 0)`. Every later command — teleop *and* autonomy — goes through this function.
 
 ---
 
 ## 📝 Today's Task
-
-1. Build `cartpole.xml` and run `cartpole_balance.py` — get the pole to balance.
-2. **Break it:** set `Kp=2` (too weak) and `Kp=30` (too strong). Watch it fail in different ways.
-3. Start with a bigger tilt (`data.qpos[1] = 0.4`) — can your gains still recover?
-4. Add a disturbance: every few seconds add a random push to `data.ctrl` and see if the controller survives.
-5. **Reflect:** write down how long it took to hand-tune good gains. Remember this on Day 24.
-
----
-
-## 🏆 Phase 3 Complete!
-
-You can now model robots in MJCF, drive and sense them from Python, and write a feedback controller. You've used the research world's favorite simulator end to end — and built the perfect launchpad for reinforcement learning.
+- Add thruster sites + actuators (`auv_thrusters.xml`).
+- Write `allocate(surge, yaw, heave)` and verify:
+  - `allocate(1,0,0)` → drives straight forward.
+  - `allocate(0,1,0)` → spins in place (yaw).
+  - `allocate(0,0,1)` → rises (heave).
+- Fix any direction that comes out backwards (swap a sign).
 
 ---
 
-## ✅ Key Takeaways
-
-✓ **CartPole** = cart (slide joint) + pole (hinge joint) + one motor + three sensors.
-
-✓ Feedback control = **measure the error, act to reduce it**; a PD rule balances the pole.
-
-✓ Gains `Kp`/`Kd` must be tuned: too low fails, too high oscillates; `Kd` adds damping.
-
-✓ Hand-tuning is fiddly — which is precisely the motivation for **reinforcement learning**.
-
-✓ You've completed MuJoCo: modeling, control, sensing, and a real control task.
+## ✅ Checkpoint
+**Commanding forward/yaw/vertical thrust moves the vehicle correctly.**
 
 ---
 
-## 📚 References & Resources
-
-- [CartPole problem background](https://gymnasium.farama.org/environments/classic_control/cart_pole/)
-- [MuJoCo control samples](https://github.com/google-deepmind/mujoco/tree/main/model)
-- [PID/PD control intro](https://en.wikipedia.org/wiki/PID_controller)
+## 📚 Resources
+- [MuJoCo actuators (thruster, force)](https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator)
 
 ---
 
-## 🔭 What's Next?
-
-**Day 16 — Hello Gazebo.** New phase! We move to Gazebo and ROS 2, the industry-standard stack used to build real-world robots — and the most "professional robotics" part of the course.
-
----
-
-*"You balanced a pole with two numbers. Next, you'll teach a machine to find them itself."*
+## 🔭 Next
+**Day 16 — Tune the dynamics so it handles like an ROV, not a brick or a balloon.**

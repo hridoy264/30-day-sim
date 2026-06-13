@@ -1,124 +1,83 @@
-# Day 26 — Sim-to-Real & Domain Randomization
+# Day 26 — Close the Autonomy Loop
 
-## 🎯 Today's Goal
-Understand the central challenge of using simulation for real robots — the **reality gap** — and the powerful technique that bridges it: **domain randomization**. This is the concept that makes everything you've learned matter for physical robots.
+**Phase 6 · Autonomy + Robustness · ~3 hours**
 
----
-
-## Overview
-
-You've trained agents in simulation. But the whole point is usually a *real* robot. Does a policy learned in sim actually work on hardware? Sometimes yes, often no — and understanding *why* (and how to fix it) is one of the most valuable ideas in modern robotics. This is a concept-focused day; no big install, but it ties the entire course to the real world.
+## 🎯 Goal
+Connect vision to control: cross-track + heading error → two PID loops (yaw + lateral) → thrust vector, with constant forward thrust. **The vehicle follows the line by itself.** This is the payoff of the whole month.
 
 ---
 
-## The Reality Gap
+## The Complete Loop
 
-Simulation is never a perfect copy of reality. The differences — the **reality gap** — include:
+Everything you've built clicks together here:
 
-- **Physics approximations** — friction, contact, and motor dynamics are simplified.
-- **Imperfect models** — the real robot's masses, dimensions, and joint play differ slightly from your URDF.
-- **Sensor noise** — real cameras and LiDARs are noisy, laggy, and sometimes wrong; sim sensors are often too clean.
-- **Unmodeled effects** — cable drag, gear backlash, air currents, wear.
-
-A policy that overfits to the simulator's *exact* physics can fail on a real robot that behaves even slightly differently. This is the #1 reason naive sim-to-real transfer fails.
-
----
-
-## The Key Insight: Don't Train for One World
-
-If a policy only works in one perfect simulation, it's brittle. The fix is counterintuitive but powerful: **train across many randomized variations** so the policy learns to be robust to *uncertainty itself*. If it can handle a thousand slightly different physics, the real world is just one more variation it can handle.
-
----
-
-## Domain Randomization
-
-**Domain randomization** means randomizing the simulator's parameters every episode during training. Instead of one fixed world, the agent trains on a whole distribution of worlds:
-
-| Randomize... | Examples |
-|--------------|----------|
-| **Physics** | friction, mass, motor strength, damping |
-| **Visuals** | textures, colors, lighting (for camera-based policies) |
-| **Sensors** | add noise, delay, dropouts |
-| **Geometry** | small size/position variations |
-
-A policy trained this way doesn't depend on any single exact value — so when it meets the real robot (yet another variation), it adapts. This single idea has powered many landmark sim-to-real results, including dexterous robot-hand manipulation and quadruped locomotion.
-
----
-
-## What It Looks Like in Code
-
-Conceptually, you randomize inside `reset()` of your Day-25 environment:
-
-```python
-def reset(self, seed=None, options=None):
-    super().reset(seed=seed)
-    p.resetSimulation()
-    p.setGravity(0, 0, -9.81)
-    self.robot = p.loadURDF("kuka_iiwa/model.urdf", useFixedBase=True)
-
-    # --- domain randomization ---
-    friction = self.np_random.uniform(0.5, 1.5)
-    p.changeDynamics(self.robot, -1, lateralFriction=friction)
-    mass_scale = self.np_random.uniform(0.8, 1.2)
-    # ... vary masses, add sensor noise to observations, etc.
-    return self._obs(), {}
+```
+   down camera ─▶ robust detector ─▶ (cross, heading) ─▶ PID ─▶ allocate() ─▶ thrusters
+        ▲                                                                         │
+        └──────────────────────── vehicle moves ◀────────────────────────────────┘
 ```
 
-Each episode, the world is a little different. The agent is forced to learn a policy that works *across* the range — exactly what real-world robustness requires.
+It's the **sense → think → act** loop, underwater. Sense = Day 25 detector. Think = PID. Act = Day 15 allocation.
 
 ---
 
-## Other Bridges Across the Gap
+## The Controller
 
-Domain randomization is the headline, but the toolbox also includes:
+Two PIDs convert the two errors into a steering command, plus constant surge to keep moving (`autonomy_loop.py`):
 
-- **System identification** — measure the real robot carefully and make the sim match it.
-- **Better simulators** — higher-fidelity physics (a reason MuJoCo and Isaac exist).
-- **Real-world fine-tuning** — train mostly in sim, then a little on the real robot.
-- **Sim-to-real-to-sim loops** — use real data to improve the sim, repeat.
+```python
+from robust_detect import RobustDetector
+det = RobustDetector()
 
-In practice, teams combine several of these.
+# yaw PID drives the line to image center (cross-track -> 0)
+Kp_yaw, Kd_yaw = 1.2, 0.3
+prev_cross = 0.0
+FORWARD = 0.35                      # constant surge
+
+while running:
+    mujoco.mj_step(model, data)
+    rgb = grab("down")
+    found, cross, heading, edge = det.errors(rgb)
+
+    # steering: combine cross-track and heading error
+    d_cross = cross - prev_cross
+    yaw = -(Kp_yaw * cross + Kd_yaw * d_cross)   # turn toward the line
+    prev_cross = cross
+
+    surge = FORWARD if found else 0.1            # slow if unsure
+    data.ctrl[:] = allocate(surge, yaw, 0.0)
+```
+
+> **Sign check:** if the line is to the *right* (`cross > 0`), the vehicle must yaw right to center it. If it veers *away* from the line, flip the sign on `yaw`. This one sign is the most common bug — expect to fix it.
+
+---
+
+## Tuning Tips
+
+- Start with only the P term on cross-track. Raise `Kp_yaw` until it tracks but wobbles.
+- Add `Kd_yaw` to smooth the wobble (your Day-6 PID skills, applied).
+- Keep `FORWARD` modest at first — slower = more forgiving while tuning.
+- Blend in heading error once cross-track works, for smoother tracking on angled segments.
 
 ---
 
 ## 📝 Today's Task
-
-This is a thinking day:
-
-1. Add **domain randomization** to your Day-25 `custom_env.py`: randomize friction and the robot's base mass each `reset()`.
-2. Train two policies — one *without* randomization, one *with* — and compare how they behave when you then change the friction to a new value at test time. The randomized one should cope better.
-3. Write a short paragraph: list three reality-gap sources for *your* environment and how you'd randomize each.
-4. Read one sim-to-real case study (see references) and note the randomizations they used.
-5. **Reflect:** why does training on *more* variation make a policy *more* robust, not less?
+- Wire the Day-25 detector into a yaw PID and constant forward thrust.
+- Get the vehicle to follow a **straight** line autonomously, staying centered.
+- Fix the yaw sign if it runs away from the line.
+- Tune `Kp_yaw`/`Kd_yaw` for steady, centered tracking.
 
 ---
 
-## ✅ Key Takeaways
-
-✓ The **reality gap** = differences between sim and reality (physics, models, sensor noise, unmodeled effects).
-
-✓ Policies that overfit one perfect sim are **brittle** on real robots — the main sim-to-real failure.
-
-✓ **Domain randomization** trains across many randomized worlds so the policy is robust to uncertainty — the real world becomes "just another variation."
-
-✓ Randomize physics, visuals, sensors, and geometry — often inside `reset()`.
-
-✓ Other bridges: **system identification**, higher-fidelity sims, and real-world fine-tuning — usually combined.
+## ✅ Checkpoint
+**Vehicle follows a straight line autonomously.** 🎉
 
 ---
 
-## 📚 References & Resources
-
-- [OpenAI: Solving Rubik's Cube with a Robot Hand (domain randomization)](https://openai.com/research/solving-rubiks-cube)
-- [Sim-to-Real overview (NVIDIA Isaac)](https://developer.nvidia.com/isaac/sim)
-- [Domain Randomization paper (Tobin et al., 2017)](https://arxiv.org/abs/1703.06907)
+## 📚 Resources
+- Revisit Day 6 (PID), Day 15 (allocation), Day 25 (robust detector).
 
 ---
 
-## 🔭 What's Next?
-
-**Day 27 — NVIDIA Isaac Sim.** Final phase! We look at the GPU-accelerated frontier of simulation, where thousands of robots train in parallel — the cutting edge that makes large-scale domain randomization practical.
-
----
-
-*"The trick isn't to make sim perfect. It's to make your robot ready for imperfection."*
+## 🔭 Next
+**Day 27 — Curves, line loss, and a clean teleop↔autonomy mode switch.**

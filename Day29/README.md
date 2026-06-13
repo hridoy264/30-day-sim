@@ -1,106 +1,68 @@
-# Day 29 — 🏁 Capstone: Build, Sensor & Control Your Own Robot
+# Day 29 — Buffer + Tuning
 
-## 🎯 Today's Goal
-Put the entire course together into one complete project: design a robot, place it in a world, give it sensors, and control it — either with a hand-written controller or a trained RL policy. This is your portfolio piece.
+**Phase 6 · Autonomy + Robustness · ~2.5 hours (buffer)**
 
----
-
-## Overview
-
-This is it — the capstone. Over 28 days you learned to describe robots, simulate physics, control joints, read sensors, work across PyBullet/MuJoCo/Gazebo, and train RL policies. Today you combine those skills into a single project that's *yours*. There's no one right answer; the goal is to demonstrate the full pipeline end to end and produce something you're proud to show.
+## 🎯 Goal
+Final polish. Do your last tuning pass and build **one repeatable launch script** that runs the whole demo: build the sim → teleop to the line → switch to autonomy. This makes tomorrow's capstone recording effortless.
 
 ---
 
-## Choose Your Capstone Track
+## Final Tuning Pass
 
-Pick the track matching the tools you enjoyed most. Each is a complete project.
+Go through the system one last time:
 
-### 🟢 Track A — PyBullet Manipulation (most accessible)
-Build a **sorting robot**: an arm that detects objects (by color/position via the camera, Day 9), picks them up (IK, Day 10), and places each in the correct bin based on a property. Combines loading, control, sensing, and logic.
-
-### 🔵 Track B — MuJoCo + RL (research flavor)
-Design a **custom robot in MJCF** (Day 12) — a hopper, a 2-link reacher, or a simple walker — wrap it as a Gym environment (Day 25), and **train a policy** with Stable-Baselines3 (Day 24) to make it perform a task. Show the learning curve and the trained behavior.
-
-### 🟠 Track C — Gazebo Autonomous Robot (robotics-engineer flavor)
-Build a **mobile robot** (Day 19) in a custom world (Day 17) with LiDAR + camera (Day 20), and write a ROS 2 node (Day 22) that does something smarter than pure avoidance — e.g., wall-following, seeking a colored target, or patrolling waypoints. Visualize in RViz (Day 21).
+- **Controller gains** — re-tune `Kp_yaw`/`Kd_yaw` for smooth, centered tracking on both straight and curved lines.
+- **Detector** — confirm the HSV range + morphology handle your turbidity conditions (Day 28).
+- **Speeds** — pick a `FORWARD` thrust that's brisk but keeps the line reliably in frame.
+- **Recovery** — verify line-loss search actually re-acquires the line.
+- **Performance** — confirm a smooth frame rate on the M4 throughout.
 
 ---
 
-## The Engineering Process (use this for any track)
+## One Repeatable Launch
 
-Real projects follow a process. Apply it:
+A single script should run the entire demo flow so you (and anyone you show) can reproduce it with one command (`run_demo.py`):
 
-1. **Define the goal.** One clear sentence: "My robot will ____." Make it specific and testable.
-2. **Build incrementally.** Get the robot loading first. Then moving. Then sensing. Then the behavior. *Never* write it all at once — test after each piece (the lesson of every mini-project).
-3. **Test continuously.** After each addition, run it. Catch bugs while they're small.
-4. **Tune.** Controllers, rewards, thresholds — expect to iterate. This is normal engineering.
-5. **Document.** Write a short README for your project: what it does, how to run it, what you learned.
-
----
-
-## A Suggested Structure for Your Project Folder
-
-```
-my_capstone/
-├── README.md          # what it does + how to run it
-├── robot.urdf/.sdf/.xml   # your robot description
-├── world.sdf          # (if Gazebo) your environment
-├── main.py            # the controller or training script
-└── demo.gif/.mp4      # a recording of it working  ← do this!
+```python
+# 1. build the sim from auv_scene.xml
+# 2. start in TELEOP   -> you fly the vehicle onto the line
+# 3. press 'm'         -> AUTONOMY takes over, follows the line
+# 4. (optional) press a key to cycle water conditions
+# 5. 'q' quits
 ```
 
-> 💡 **Record a short clip of your robot working.** A 15-second GIF or video is the single most compelling thing for a portfolio, LinkedIn post, or job application. It proves the whole pipeline runs.
+This is essentially your Day-27 `mode_switch.py` cleaned up: clear on-screen instructions, a tidy HUD (mode, errors), and sensible defaults. The goal is a polished, one-command experience.
+
+> Put `run_demo.py`, `auv_scene.xml`, and `robust_detect.py` together in your `auv-project/` folder so the demo runs standalone.
 
 ---
 
-## Stretch Goals (if you finish early)
+## Pre-Capstone Checklist
 
-- Add **domain randomization** (Day 26) and show your controller still works under variation.
-- Combine tracks: train a policy in MuJoCo, or add a learned component to the Gazebo robot.
-- Make the task **harder**: more objects, a maze, a moving target.
-- Add a simple **GUI or plot** of the robot's sensor data over time.
+- [ ] Teleop flies smoothly.
+- [ ] Autonomy follows a straight line, centered.
+- [ ] Autonomy handles a curve.
+- [ ] Line-loss recovery works.
+- [ ] Survives 3+ water conditions.
+- [ ] One command launches the whole demo.
+- [ ] No crashes during a full run.
+
+If every box is checked, you're ready to record.
 
 ---
 
 ## 📝 Today's Task
-
-1. **Pick a track** (A, B, or C) and write your one-sentence goal.
-2. **Build incrementally** — robot → motion → sensing → behavior, testing at each step.
-3. Get a **minimum working version** running end to end (don't over-scope; working beats fancy).
-4. **Record a short clip** of it working.
-5. Write a **project README** documenting what it does, how to run it, and what was hardest.
-
-Take your time — this can span more than one sitting. The capstone is the proof of everything you've learned.
+- Final-tune gains, detector, and speeds.
+- Build `run_demo.py`: one command → teleop → autonomy → (water conditions).
+- Run the pre-capstone checklist and fix any gaps.
+- Do a full dry-run of the demo end to end.
 
 ---
 
-## ✅ Key Takeaways
-
-✓ The capstone combines the **whole pipeline**: describe → simulate → control → sense → (optionally) learn.
-
-✓ Choose a track that matches your interest — **PyBullet manipulation**, **MuJoCo + RL**, or **Gazebo autonomy**.
-
-✓ Follow the process: **define → build incrementally → test continuously → tune → document**.
-
-✓ **Working beats fancy** — get a minimal version running end to end before adding extras.
-
-✓ **Record a clip** and write a README — that's what turns a project into a portfolio piece.
+## ✅ Checkpoint
+A single script reproducibly runs: build sim → teleop to line → switch to autonomy, with no crashes.
 
 ---
 
-## 📚 References & Resources
-
-- Revisit the mini-projects: Day 10 (manipulation), Day 15 (control), Day 22 (autonomy), Day 24–25 (RL).
-- [PyBullet examples](https://github.com/bulletphysics/bullet3/tree/master/examples/pybullet/examples)
-- [MuJoCo Menagerie (robot models to start from)](https://github.com/google-deepmind/mujoco_menagerie)
-- [Recording your screen to GIF (e.g., Peek on Linux, or OBS)](https://github.com/phw/peek)
-
----
-
-## 🔭 What's Next?
-
-**Day 30 — Wrap-Up & Where to Go Next.** The final day: reflect on the journey, build your portfolio, and map out how to keep growing as a simulation engineer.
-
----
-
-*"Everything you learned, in one project. This is the day it all comes together."*
+## 🔭 Next
+**Day 30 — Capstone: record the full demo and write it up.**

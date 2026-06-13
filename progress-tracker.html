@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>30 Days of Underwater Simulation — Progress</title>
+<style>
+  :root{
+    --bg:#0c1622; --panel:#13202f; --panel2:#172a3d; --ink:#e8f0f7;
+    --muted:#8fa6b8; --line:#23394f; --accent:#19b3c6; --accent2:#f5b301;
+    --done:#1f7a52; --done-bg:#11352a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       background:linear-gradient(180deg,#0a1320,#0c1622 60%,#0a151f);color:var(--ink);
+       min-height:100vh;padding:32px 16px}
+  .wrap{max-width:820px;margin:0 auto}
+  h1{font-size:1.6rem;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 22px;font-size:.95rem}
+  .bar-wrap{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+            padding:18px 20px;margin-bottom:10px;position:sticky;top:12px;z-index:5;
+            backdrop-filter:blur(6px)}
+  .bar-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .pct{font-size:1.5rem;font-weight:700;color:var(--accent)}
+  .count{color:var(--muted);font-size:.9rem}
+  .track{height:12px;background:#0a1722;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .fill{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--accent2));
+        transition:width .4s ease;border-radius:8px}
+  .reset{background:transparent;border:1px solid var(--line);color:var(--muted);
+         border-radius:8px;padding:6px 12px;font-size:.8rem;cursor:pointer;margin-top:12px}
+  .reset:hover{color:var(--ink);border-color:var(--accent)}
+  .phase{margin-top:24px}
+  .phase h2{font-size:1rem;letter-spacing:.04em;text-transform:uppercase;color:var(--accent);
+            margin:0 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .day{display:flex;gap:12px;align-items:flex-start;background:var(--panel);
+       border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;
+       cursor:pointer;transition:background .15s,border-color .15s}
+  .day:hover{background:var(--panel2)}
+  .day.done{background:var(--done-bg);border-color:var(--done)}
+  .box{flex:0 0 auto;width:22px;height:22px;border-radius:6px;border:2px solid var(--line);
+       margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:14px;
+       color:#fff;transition:all .15s}
+  .day.done .box{background:var(--done);border-color:var(--done)}
+  .meta{flex:1}
+  .dnum{font-weight:600}
+  .dnum .star{color:var(--accent2);margin-left:6px}
+  .dtitle{font-size:.95rem}
+  .day.done .dtitle{text-decoration:line-through;color:var(--muted)}
+  .chk{display:block;color:var(--muted);font-size:.82rem;margin-top:3px;font-style:italic}
+  .foot{color:var(--muted);font-size:.82rem;margin-top:24px;text-align:center;line-height:1.6}
+  .done-msg{display:none;color:var(--accent2);font-weight:700;margin-top:8px}
+  .done-msg.show{display:block}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🌊 30 Days of Underwater Simulation</h1>
+  <p class="sub">Build an autonomous line-following AUV in MuJoCo. Tick a day when you hit its checkpoint — your progress saves automatically in this browser.</p>
+
+  <div class="bar-wrap">
+    <div class="bar-top">
+      <span class="pct" id="pct">0%</span>
+      <span class="count" id="count">0 / 30 days</span>
+    </div>
+    <div class="track"><div class="fill" id="fill"></div></div>
+    <div class="done-msg" id="doneMsg">🏁 All 30 days complete — go record that demo!</div>
+    <button class="reset" id="reset">Reset progress</button>
+  </div>
+
+  <div id="phases"></div>
+
+  <p class="foot">⭐ = a make-or-break skill &nbsp;·&nbsp; Buffer days (7, 19, 24, 29) absorb slippage.<br>
+  Falling behind is normal and planned for. Keep going. 🤖</p>
+</div>
+
+<script>
+const DATA = [
+  ["Phase 1 — Orientation & MuJoCo Setup", [
+    [1,"Mental model + environment","a MuJoCo window opens",false],
+    [2,"Frames, rigid bodies, marine 6-DOF","explain why a too-large timestep destabilizes a sim",false],
+    [3,"MJCF format","read an MJCF and name each element's role",false],
+  ]],
+  ["Phase 2 — MuJoCo Fundamentals", [
+    [4,"Pendulum from scratch","your own .xml loads and swings",false],
+    [5,"Cart-pole + Python loop","step the sim and apply controls in Python",false],
+    [6,"Your first PID","a working closed control loop",true],
+    [7,"Buffer / consolidate","Days 1–6 run; concepts written in your words",false],
+    [8,"LQR intuition","you can say what Q and R do",false],
+    [9,"Contacts, sensors, the floor","understand why contacts cause instability",false],
+    [10,"Offscreen camera rendering","grab a camera image as an array",true],
+  ]],
+  ["Phase 3 — Marine Dynamics + MuJoCo Fluid", [
+    [11,"Marine dynamics theory","explain why a vehicle glides after thrust stops",false],
+    [12,"MuJoCo fluid forces","a body shows realistic drag",false],
+    [13,"Buoyancy + ROS concepts","make a body neutrally buoyant",false],
+  ]],
+  ["Phase 4 — Build the Underwater Vehicle", [
+    [14,"Vehicle body + free joint","a 6-DOF body floats and responds to drag",false],
+    [15,"Thrusters + control allocation","forward/yaw/vertical thrust moves it correctly",false],
+    [16,"Tune the dynamics","feels like a vehicle, not a brick or balloon",false],
+    [17,"Mount two cameras","two live camera streams from the moving vehicle",false],
+    [18,"Seabed + line","the line is clearly visible in the downward camera",false],
+    [19,"Buffer + integration","everything runs in one loop without choking the M4",false],
+  ]],
+  ["Phase 5 — Teleoperation + Vision", [
+    [20,"Teleoperation","you can drive the vehicle manually",true],
+    [21,"OpenCV line detection","draw a centroid/box on the detected line",false],
+    [22,"Error signals","two clean numeric error signals as it moves",false],
+    [23,"Second camera use","second camera contributes a usable signal",false],
+    [24,"Buffer + logging","save frames + state; replay offline",false],
+    [25,"Robustness pass on detection","detector is steady, not jumpy",false],
+  ]],
+  ["Phase 6 — Autonomy + Robustness", [
+    [26,"Close the autonomy loop","follows a straight line autonomously",true],
+    [27,"Curves, loss, mode switch","follows a curve; recovers from loss",false],
+    [28,"Turbidity / domain randomization","survives 3+ water conditions",false],
+    [29,"Buffer + tuning","one repeatable launch script",false],
+    [30,"Capstone + write-up","a reproducible end-to-end demo + notes",false],
+  ]],
+];
+
+const KEY = "auv30_progress_v1";
+let done = {};
+try { done = JSON.parse(localStorage.getItem(KEY)) || {}; } catch(e){ done = {}; }
+
+const phasesEl = document.getElementById("phases");
+
+function render(){
+  phasesEl.innerHTML = "";
+  DATA.forEach(([name, days])=>{
+    const sec = document.createElement("div"); sec.className="phase";
+    const h = document.createElement("h2"); h.textContent = name; sec.appendChild(h);
+    days.forEach(([n,title,chk,star])=>{
+      const d = document.createElement("div");
+      d.className = "day" + (done[n] ? " done":"");
+      d.innerHTML =
+        `<div class="box">${done[n]?"✓":""}</div>
+         <div class="meta">
+           <div class="dnum">Day ${String(n).padStart(2,"0")}${star?'<span class="star">⭐</span>':''}</div>
+           <div class="dtitle">${title}</div>
+           <span class="chk">Checkpoint: ${chk}</span>
+         </div>`;
+      d.onclick = ()=>{ done[n] = !done[n]; save(); render(); update(); };
+      sec.appendChild(d);
+    });
+    phasesEl.appendChild(sec);
+  });
+}
+
+function update(){
+  const total = 30;
+  const n = Object.values(done).filter(Boolean).length;
+  const pct = Math.round(n/total*100);
+  document.getElementById("fill").style.width = pct+"%";
+  document.getElementById("pct").textContent = pct+"%";
+  document.getElementById("count").textContent = n+" / "+total+" days";
+  document.getElementById("doneMsg").classList.toggle("show", n===total);
+}
+
+function save(){ localStorage.setItem(KEY, JSON.stringify(done)); }
+
+document.getElementById("reset").onclick = ()=>{
+  if(confirm("Reset all progress?")){ done={}; save(); render(); update(); }
+};
+
+render(); update();
+</script>
+</body>
+</html>
